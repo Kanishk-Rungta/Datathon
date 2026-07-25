@@ -1,0 +1,12 @@
+{"RankID": 1, "RankName": "Director General of Police", "Hierarchy": 1, "Active": 1}
+{"RankID": 2, "RankName": "Additional Director General", "Hierarchy": 2, "Active": 1}
+{"RankID": 3, "RankName": "Inspector General", "Hierarchy": 3, "Active": 1}
+{"RankID": 4, "RankName": "Deputy Inspector General", "Hierarchy": 4, "Active": 1}
+{"RankID": 5, "RankName": "Superintendent of Police", "Hierarchy": 5, "Active": 1}
+{"RankID": 6, "RankName": "Additional Superintendent", "Hierarchy": 6, "Active": 1}
+{"RankID": 7, "RankName": "Deputy Superintendent", "Hierarchy": 7, "Active": 1}
+{"RankID": 8, "RankName": "Police Inspector", "Hierarchy": 8, "Active": 1}
+{"RankID": 9, "RankName": "Police Sub-Inspector", "Hierarchy": 9, "Active": 1}
+{"RankID": 10, "RankName": "Assistant Sub-Inspector", "Hierarchy": 10, "Active": 1}
+{"RankID": 11, "RankName": "Head Constable", "Hierarchy": 11, "Active": 1}
+{"RankID": 12, "RankName": "Police Constable", "Hierarchy": 12, "Active": 1}

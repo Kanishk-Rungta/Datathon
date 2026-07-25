@@ -1,0 +1,51 @@
+{
+  "name": "cip_nightly",
+  "description": "Nightly pipeline. Each state calls a function that exists and is tested locally; the Circuit adds scheduling and retry, not logic.",
+  "schedule": { "cron": "0 2 * * *", "timezone": "Asia/Kolkata" },
+  "start_at": "ingest",
+  "states": {
+    "ingest": {
+      "type": "function",
+      "function": "cip_refresh",
+      "payload": { "stage": "ingest" },
+      "comment": "Consume NDJSON batches from Stratus into raw, then curated.",
+      "retry": { "max_attempts": 3, "backoff_seconds": 30 },
+      "next": "data_quality"
+    },
+    "data_quality": {
+      "type": "function",
+      "function": "cip_refresh",
+      "payload": { "stage": "data_quality" },
+      "comment": "Run the DQ suite. A blocking failure stops the run rather than publishing untrustworthy gold tables.",
+      "next": "gate"
+    },
+    "gate": {
+      "type": "choice",
+      "choices": [
+        { "variable": "$.blocking_failures", "numeric_greater_than": 0, "next": "halt" }
+      ],
+      "default": "intelligence"
+    },
+    "halt": {
+      "type": "fail",
+      "error": "DataQualityGateFailed",
+      "cause": "One or more blocking data-quality checks failed. Curated data was not promoted."
+    },
+    "intelligence": {
+      "type": "function",
+      "function": "cip_refresh",
+      "payload": { "stage": "intelligence" },
+      "comment": "Entity resolution, graph rebuild, embeddings, hotspots, early warning, priority scores.",
+      "retry": { "max_attempts": 2, "backoff_seconds": 60 },
+      "next": "retention"
+    },
+    "retention": {
+      "type": "function",
+      "function": "cip_refresh",
+      "payload": { "stage": "retention" },
+      "comment": "Purge expired conversation state. Audit rows are never purged here.",
+      "next": "done"
+    },
+    "done": { "type": "succeed" }
+  }
+}

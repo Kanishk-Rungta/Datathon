@@ -1,0 +1,31 @@
+{"DistrictID": 2901, "DistrictName": "Bagalkote", "StateID": 29, "Active": 1, "cip_latitude": 16.181, "cip_longitude": 75.696, "cip_weight": 0.9}
+{"DistrictID": 2902, "DistrictName": "Ballari", "StateID": 29, "Active": 1, "cip_latitude": 15.1394, "cip_longitude": 76.9214, "cip_weight": 1.0}
+{"DistrictID": 2903, "DistrictName": "Belagavi", "StateID": 29, "Active": 1, "cip_latitude": 15.8497, "cip_longitude": 74.4977, "cip_weight": 1.2}
+{"DistrictID": 2904, "DistrictName": "Bengaluru City", "StateID": 29, "Active": 1, "cip_latitude": 12.9716, "cip_longitude": 77.5946, "cip_weight": 6.0}
+{"DistrictID": 2905, "DistrictName": "Bengaluru Rural", "StateID": 29, "Active": 1, "cip_latitude": 13.2846, "cip_longitude": 77.5946, "cip_weight": 1.1}
+{"DistrictID": 2906, "DistrictName": "Bidar", "StateID": 29, "Active": 1, "cip_latitude": 17.9104, "cip_longitude": 77.5199, "cip_weight": 0.9}
+{"DistrictID": 2907, "DistrictName": "Chamarajanagara", "StateID": 29, "Active": 1, "cip_latitude": 11.9261, "cip_longitude": 76.9438, "cip_weight": 0.7}
+{"DistrictID": 2908, "DistrictName": "Chikkaballapura", "StateID": 29, "Active": 1, "cip_latitude": 13.4355, "cip_longitude": 77.7315, "cip_weight": 0.8}
+{"DistrictID": 2909, "DistrictName": "Chikkamagaluru", "StateID": 29, "Active": 1, "cip_latitude": 13.3161, "cip_longitude": 75.772, "cip_weight": 0.8}
+{"DistrictID": 2910, "DistrictName": "Chitradurga", "StateID": 29, "Active": 1, "cip_latitude": 14.2251, "cip_longitude": 76.398, "cip_weight": 0.9}
+{"DistrictID": 2911, "DistrictName": "Dakshina Kannada", "StateID": 29, "Active": 1, "cip_latitude": 12.8438, "cip_longitude": 75.2479, "cip_weight": 1.6}
+{"DistrictID": 2912, "DistrictName": "Davanagere", "StateID": 29, "Active": 1, "cip_latitude": 14.4644, "cip_longitude": 75.9218, "cip_weight": 1.1}
+{"DistrictID": 2913, "DistrictName": "Dharwad", "StateID": 29, "Active": 1, "cip_latitude": 15.4589, "cip_longitude": 75.0078, "cip_weight": 1.5}
+{"DistrictID": 2914, "DistrictName": "Gadag", "StateID": 29, "Active": 1, "cip_latitude": 15.4315, "cip_longitude": 75.6355, "cip_weight": 0.7}
+{"DistrictID": 2915, "DistrictName": "Hassan", "StateID": 29, "Active": 1, "cip_latitude": 13.0072, "cip_longitude": 76.0962, "cip_weight": 0.9}
+{"DistrictID": 2916, "DistrictName": "Haveri", "StateID": 29, "Active": 1, "cip_latitude": 14.7951, "cip_longitude": 75.3991, "cip_weight": 0.8}
+{"DistrictID": 2917, "DistrictName": "Kalaburagi", "StateID": 29, "Active": 1, "cip_latitude": 17.3297, "cip_longitude": 76.8343, "cip_weight": 1.3}
+{"DistrictID": 2918, "DistrictName": "Kodagu", "StateID": 29, "Active": 1, "cip_latitude": 12.3375, "cip_longitude": 75.8069, "cip_weight": 0.6}
+{"DistrictID": 2919, "DistrictName": "Kolar", "StateID": 29, "Active": 1, "cip_latitude": 13.1367, "cip_longitude": 78.1292, "cip_weight": 0.9}
+{"DistrictID": 2920, "DistrictName": "Koppal", "StateID": 29, "Active": 1, "cip_latitude": 15.3547, "cip_longitude": 76.1546, "cip_weight": 0.7}
+{"DistrictID": 2921, "DistrictName": "Mandya", "StateID": 29, "Active": 1, "cip_latitude": 12.5218, "cip_longitude": 76.8951, "cip_weight": 0.9}
+{"DistrictID": 2922, "DistrictName": "Mysuru", "StateID": 29, "Active": 1, "cip_latitude": 12.2958, "cip_longitude": 76.6394, "cip_weight": 2.2}
+{"DistrictID": 2923, "DistrictName": "Raichur", "StateID": 29, "Active": 1, "cip_latitude": 16.2076, "cip_longitude": 77.3463, "cip_weight": 0.9}
+{"DistrictID": 2924, "DistrictName": "Ramanagara", "StateID": 29, "Active": 1, "cip_latitude": 12.7217, "cip_longitude": 77.28, "cip_weight": 0.8}
+{"DistrictID": 2925, "DistrictName": "Shivamogga", "StateID": 29, "Active": 1, "cip_latitude": 13.9299, "cip_longitude": 75.5681, "cip_weight": 1.2}
+{"DistrictID": 2926, "DistrictName": "Tumakuru", "StateID": 29, "Active": 1, "cip_latitude": 13.3392, "cip_longitude": 77.114, "cip_weight": 1.2}
+{"DistrictID": 2927, "DistrictName": "Udupi", "StateID": 29, "Active": 1, "cip_latitude": 13.3409, "cip_longitude": 74.7421, "cip_weight": 1.0}
+{"DistrictID": 2928, "DistrictName": "Uttara Kannada", "StateID": 29, "Active": 1, "cip_latitude": 14.7935, "cip_longitude": 74.6869, "cip_weight": 0.8}
+{"DistrictID": 2929, "DistrictName": "Vijayanagara", "StateID": 29, "Active": 1, "cip_latitude": 15.2667, "cip_longitude": 76.3833, "cip_weight": 0.7}
+{"DistrictID": 2930, "DistrictName": "Vijayapura", "StateID": 29, "Active": 1, "cip_latitude": 16.8302, "cip_longitude": 75.71, "cip_weight": 0.9}
+{"DistrictID": 2931, "DistrictName": "Yadgir", "StateID": 29, "Active": 1, "cip_latitude": 16.77, "cip_longitude": 77.1376, "cip_weight": 0.6}

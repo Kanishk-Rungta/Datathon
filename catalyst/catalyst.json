@@ -1,0 +1,50 @@
+{
+  "project_name": "ksp-cip",
+  "project_id": "${CATALYST_PROJECT_ID}",
+  "comment": "Deployment descriptor. Every component maps 1:1 to a module that already runs locally; nothing here is a re-implementation.",
+  "functions": [
+    {
+      "name": "cip_api",
+      "type": "advancedio",
+      "stack": "python3.9",
+      "source": "functions/cip_api",
+      "description": "Serves the FastAPI application. The same ASGI app object used locally.",
+      "memory": 512,
+      "timeout": 30
+    },
+    {
+      "name": "cip_refresh",
+      "type": "event",
+      "stack": "python3.9",
+      "source": "functions/cip_refresh",
+      "description": "Runs the intelligence refresh (entity resolution, graph, embeddings, hotspots, alerts, priority).",
+      "memory": 1024,
+      "timeout": 900
+    }
+  ],
+  "appsail": [
+    {
+      "name": "cip-console",
+      "source": "appsail/console",
+      "stack": "node18",
+      "description": "Static React console. Serves frontend/dist and proxies /api to the function."
+    }
+  ],
+  "datastore": {
+    "tables_from": "backend/ksp_cip/infrastructure/db/schema.sql",
+    "note": "Table definitions are generated from the same schema file the SQLite adapter applies, so the two backends cannot drift."
+  },
+  "stratus": {
+    "buckets": [
+      { "name": "cip-ingest", "description": "NDJSON landing zone and generated exports." }
+    ]
+  },
+  "cache": {
+    "segments": [
+      { "name": "cip_session", "ttl_seconds": 2592000, "description": "Conversation session state." }
+    ]
+  },
+  "circuits": [
+    { "name": "cip_nightly", "source": "circuits/nightly.json" }
+  ]
+}

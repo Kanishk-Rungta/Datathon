@@ -1,0 +1,4 @@
+{
+  "deployment": { "name": "cip_refresh", "type": "event", "stack": "python3.9", "memory": 1024, "timeout": 900 },
+  "execution": { "main": "main.py" }
+}

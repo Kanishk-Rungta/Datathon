@@ -1,0 +1,325 @@
+"""Zoho Catalyst Data Store adapter.
+
+Implements the same :class:`DataStore` protocol as the SQLite adapter, so the
+application layer is unchanged between local development and a Catalyst
+deployment. Switching is one environment variable: ``KSPCIP_DATASTORE_BACKEND=catalyst``.
+
+Three real differences from SQLite are handled here rather than leaking upward:
+
+* **ZCQL is not SQL.** It has no ``PRAGMA``, no ``ON CONFLICT``, and a limited
+  expression grammar. Upserts are therefore read-then-write, and the adapter
+  refuses statements it cannot faithfully translate instead of silently
+  approximating them.
+* **Named parameters must be inlined.** ZCQL takes a query string, so binding
+  is done here with strict escaping — the same discipline the SQLite adapter
+  gets from the driver. Only scalars are accepted.
+* **Row limits.** ZCQL caps rows per response, so ``query`` paginates.
+
+This adapter is written against the documented REST API and is exercised by
+contract tests that assert translation behaviour without a network. It has not
+been run against a live Catalyst project in this build; that is stated plainly
+rather than implied otherwise.
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+import time
+from contextlib import contextmanager
+from typing import Any, Iterator, Mapping, Sequence
+from urllib import error as urllib_error
+from urllib import parse as urllib_parse
+from urllib import request as urllib_request
+
+from ...config import Settings
+from ...domain.errors import CIPError, ProviderError
+from ..observability import get_logger
+
+LOGGER = get_logger(__name__)
+
+ZCQL_PAGE_SIZE = 300
+TOKEN_SAFETY_WINDOW_SECONDS = 120
+
+
+class CatalystAuth:
+    """OAuth refresh-token flow with in-process caching."""
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._lock = threading.Lock()
+        self._token: str | None = None
+        self._expires_at: float = 0.0
+
+    def token(self) -> str:
+        with self._lock:
+            if self._token and time.time() < self._expires_at - TOKEN_SAFETY_WINDOW_SECONDS:
+                return self._token
+            self._token = self._refresh()
+            return self._token
+
+    def _refresh(self) -> str:
+        settings = self._settings
+        missing = [
+            name for name, value in (
+                ("catalyst_oauth_client_id", settings.catalyst_oauth_client_id),
+                ("catalyst_oauth_client_secret", settings.catalyst_oauth_client_secret),
+                ("catalyst_oauth_refresh_token", settings.catalyst_oauth_refresh_token),
+                ("catalyst_project_id", settings.catalyst_project_id),
+            ) if not value
+        ]
+        if missing:
+            raise ProviderError(
+                "Catalyst credentials are not configured",
+                provider="catalyst",
+                missing=missing,
+            )
+        payload = urllib_parse.urlencode({
+            "refresh_token": settings.catalyst_oauth_refresh_token,
+            "client_id": settings.catalyst_oauth_client_id,
+            "client_secret": settings.catalyst_oauth_client_secret,
+            "grant_type": "refresh_token",
+        }).encode("utf-8")
+        url = f"{settings.catalyst_accounts_url.rstrip('/')}/oauth/v2/token"
+        request = urllib_request.Request(url, data=payload, method="POST")
+        request.add_header("Content-Type", "application/x-www-form-urlencoded")
+        try:
+            with urllib_request.urlopen(request, timeout=30) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except urllib_error.URLError as exc:  # pragma: no cover - network path
+            raise ProviderError("Catalyst token refresh failed", provider="catalyst") from exc
+        if "access_token" not in body:
+            raise ProviderError("Catalyst token refresh returned no access token", provider="catalyst",
+                                detail=body.get("error"))
+        self._expires_at = time.time() + int(body.get("expires_in", 3600))
+        return str(body["access_token"])
+
+
+def quote_literal(value: Any) -> str:
+    """Inline a scalar into ZCQL with strict escaping.
+
+    Refusing non-scalars is deliberate: silently JSON-encoding a dict here is
+    how injection bugs and corrupt rows get introduced.
+    """
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, (bytes, bytearray)):
+        raise CIPError("Binary values must be base64-encoded before reaching ZCQL")
+    if not isinstance(value, str):
+        raise CIPError(f"ZCQL cannot bind a value of type {type(value).__name__}")
+    escaped = value.replace("\\", "\\\\").replace("'", "\\'")
+    return f"'{escaped}'"
+
+
+def bind_named(sql: str, params: Mapping[str, Any]) -> str:
+    """Replace ``:name`` placeholders with escaped literals, longest name first."""
+    rendered = sql
+    for name in sorted(params, key=len, reverse=True):
+        rendered = rendered.replace(f":{name}", quote_literal(params[name]))
+    if ":" in _strip_literals(rendered):
+        raise CIPError("Unbound parameter remains after ZCQL binding", sql=sql[:200])
+    return rendered
+
+
+def _strip_literals(sql: str) -> str:
+    out: list[str] = []
+    inside = False
+    index = 0
+    while index < len(sql):
+        char = sql[index]
+        if char == "\\" and inside:
+            index += 2
+            continue
+        if char == "'":
+            inside = not inside
+        elif not inside:
+            out.append(char)
+        index += 1
+    return "".join(out)
+
+
+class CatalystDataStore:
+    """DataStore backed by Catalyst Data Store tables via ZCQL."""
+
+    backend = "catalyst"
+
+    def __init__(self, settings: Settings, auth: CatalystAuth | None = None) -> None:
+        self._settings = settings
+        self._auth = auth or CatalystAuth(settings)
+        self._base = (
+            f"{settings.catalyst_base_url.rstrip('/')}"
+            f"/baas/v1/project/{settings.catalyst_project_id}"
+        )
+
+    # ------------------------------------------------------------- protocol
+    def query(self, sql: str, params: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+        statement = bind_named(sql, params or {})
+        if statement.lstrip().upper().startswith("PRAGMA"):
+            raise CIPError("PRAGMA is not available on the Catalyst Data Store", sql=statement[:120])
+        rows: list[dict[str, Any]] = []
+        offset = 0
+        while True:
+            page = self._zcql(f"{statement} LIMIT {offset}, {ZCQL_PAGE_SIZE}")
+            rows.extend(page)
+            if len(page) < ZCQL_PAGE_SIZE:
+                break
+            offset += ZCQL_PAGE_SIZE
+        return rows
+
+    def execute(self, sql: str, params: Mapping[str, Any] | None = None) -> int:
+        statement = bind_named(sql, params or {})
+        head = statement.lstrip().split(None, 1)[0].upper()
+        if head == "INSERT":
+            table, values = _parse_insert(statement)
+            return len(self._insert_rows(table, [values]))
+        if head in {"UPDATE", "DELETE"}:
+            self._zcql(statement)
+            return 0
+        raise CIPError(f"Unsupported statement for the Catalyst adapter: {head}", sql=statement[:120])
+
+    def execute_many(self, sql: str, rows: Sequence[Mapping[str, Any]]) -> int:
+        if not rows:
+            return 0
+        head = sql.lstrip().split(None, 1)[0].upper()
+        if head != "INSERT":
+            total = 0
+            for row in rows:
+                total += self.execute(sql, row)
+            return total
+        table, columns = _parse_insert_columns(sql)
+        payload = [{column: row.get(column) for column in columns} for row in rows]
+        written = 0
+        for chunk in _chunks(payload, 200):
+            written += len(self._insert_rows(table, chunk))
+        return written
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """No-op context manager.
+
+        The Data Store has no multi-row transaction primitive. Pretending
+        otherwise would be worse than saying so: callers that need atomicity
+        must be designed to be idempotent and replayable, which the loader and
+        the intelligence refresh already are.
+        """
+        yield
+
+    def close(self) -> None:  # pragma: no cover - nothing to release
+        return None
+
+    # ---------------------------------------------------------------- HTTP
+    def _zcql(self, statement: str) -> list[dict[str, Any]]:
+        body = json.dumps({"query": statement}).encode("utf-8")
+        payload = self._call("POST", "/query", body)
+        rows: list[dict[str, Any]] = []
+        for entry in payload.get("data", []) or []:
+            flattened: dict[str, Any] = {}
+            for value in entry.values():
+                if isinstance(value, dict):
+                    flattened.update(value)
+            rows.append(flattened or entry)
+        return rows
+
+    def _insert_rows(self, table: str, rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        body = json.dumps([dict(row) for row in rows]).encode("utf-8")
+        payload = self._call("POST", f"/table/{table}/row", body)
+        return payload.get("data", []) or []
+
+    def _call(self, method: str, path: str, body: bytes) -> dict[str, Any]:
+        url = f"{self._base}{path}"
+        request = urllib_request.Request(url, data=body, method=method)
+        request.add_header("Authorization", f"Zoho-oauthtoken {self._auth.token()}")
+        request.add_header("Content-Type", "application/json")
+        request.add_header("ENVIRONMENT", self._settings.catalyst_environment)
+        try:
+            with urllib_request.urlopen(request, timeout=45) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib_error.HTTPError as exc:  # pragma: no cover - network path
+            detail = exc.read().decode("utf-8", errors="replace")[:400]
+            LOGGER.error("catalyst_http_error", extra={"status": exc.code, "path": path})
+            raise ProviderError("Catalyst request failed", provider="catalyst",
+                                status=exc.code, detail=detail) from exc
+        except urllib_error.URLError as exc:  # pragma: no cover - network path
+            raise ProviderError("Catalyst is unreachable", provider="catalyst") from exc
+
+
+# ------------------------------------------------------------- SQL parsing
+
+
+def _parse_insert(statement: str) -> tuple[str, dict[str, Any]]:
+    table, columns = _parse_insert_columns(statement)
+    values_part = statement[statement.upper().index("VALUES") + 6:].strip()
+    values_part = values_part.strip("()")
+    values = _split_top_level(values_part)
+    if len(values) != len(columns):
+        raise CIPError("INSERT column/value count mismatch", sql=statement[:160])
+    return table, {column: _literal_to_python(value) for column, value in zip(columns, values)}
+
+
+def _parse_insert_columns(statement: str) -> tuple[str, list[str]]:
+    upper = statement.upper()
+    if "INSERT INTO" not in upper:
+        raise CIPError("Not an INSERT statement", sql=statement[:120])
+    after = statement[upper.index("INSERT INTO") + 11:].lstrip()
+    open_paren = after.index("(")
+    table = after[:open_paren].strip().strip('"')
+    close_paren = after.index(")")
+    columns = [part.strip().strip('"') for part in after[open_paren + 1:close_paren].split(",")]
+    return table, columns
+
+
+def _split_top_level(text: str) -> list[str]:
+    parts: list[str] = []
+    depth = 0
+    inside = False
+    current: list[str] = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and inside:
+            current.append(text[index:index + 2])
+            index += 2
+            continue
+        if char == "'":
+            inside = not inside
+        elif not inside and char == "(":
+            depth += 1
+        elif not inside and char == ")":
+            depth -= 1
+        elif not inside and char == "," and depth == 0:
+            parts.append("".join(current).strip())
+            current = []
+            index += 1
+            continue
+        current.append(char)
+        index += 1
+    if current:
+        parts.append("".join(current).strip())
+    return parts
+
+
+def _literal_to_python(literal: str) -> Any:
+    text = literal.strip()
+    if text.upper() == "NULL":
+        return None
+    if text.lower() in {"true", "false"}:
+        return text.lower() == "true"
+    if text.startswith("'") and text.endswith("'"):
+        return text[1:-1].replace("\\'", "'").replace("\\\\", "\\")
+    try:
+        return int(text)
+    except ValueError:
+        pass
+    try:
+        return float(text)
+    except ValueError:
+        return text
+
+
+def _chunks(rows: Sequence[Any], size: int) -> Iterator[Sequence[Any]]:
+    for start in range(0, len(rows), size):
+        yield rows[start:start + size]

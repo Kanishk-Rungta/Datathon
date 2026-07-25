@@ -1,0 +1,8 @@
+{"CaseStatusID": 1, "CaseStatusName": "Under Investigation"}
+{"CaseStatusID": 2, "CaseStatusName": "Charge Sheeted"}
+{"CaseStatusID": 3, "CaseStatusName": "Pending Trial"}
+{"CaseStatusID": 4, "CaseStatusName": "Convicted"}
+{"CaseStatusID": 5, "CaseStatusName": "Acquitted"}
+{"CaseStatusID": 6, "CaseStatusName": "Closed - Undetected"}
+{"CaseStatusID": 7, "CaseStatusName": "Closed - False"}
+{"CaseStatusID": 8, "CaseStatusName": "Transferred"}

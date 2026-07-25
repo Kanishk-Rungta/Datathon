@@ -1,0 +1,7 @@
+{
+  "name": "cip-console",
+  "stack": "node18",
+  "command": "node server.js",
+  "port": 9000,
+  "comment": "Serves the built React console and forwards /api to the cip_api function."
+}

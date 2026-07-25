@@ -1,0 +1,231 @@
+"""Aggregate read models for the analytics engine.
+
+Every method returns *rows of counts*, never narrative. All arithmetic beyond
+``COUNT``/``GROUP BY`` (baselines, z-scores, growth rates) happens in
+``application.analytics`` where it is unit-tested against known fixtures.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+from typing import Any, Sequence
+
+from ....domain.models import UnitScope
+from ....domain.ports import DataStore
+from .cases import in_clause
+
+
+@dataclass(slots=True)
+class AggregateFilter:
+    unit_ids: Sequence[int] | None = None
+    district_ids: Sequence[int] | None = None
+    crime_sub_head_ids: Sequence[int] | None = None
+    crime_head_ids: Sequence[int] | None = None
+    date_from: date | None = None
+    date_to: date | None = None
+
+
+class AnalyticsRepository:
+    def __init__(self, store: DataStore) -> None:
+        self._store = store
+
+    def _predicate(self, filters: AggregateFilter, scope: UnitScope) -> tuple[str, dict[str, Any]]:
+        clauses: list[str] = ["c.CrimeRegisteredDate IS NOT NULL"]
+        params: dict[str, Any] = {}
+        if not scope.statewide:
+            allowed = sorted(scope.unit_ids)
+            if not allowed:
+                return " WHERE 1 = 0", {}
+            fragment, scope_params = in_clause("scope_u", allowed)
+            clauses.append(f"c.PoliceStationID IN ({fragment})")
+            params.update(scope_params)
+        if filters.unit_ids:
+            fragment, extra = in_clause("f_u", list(filters.unit_ids))
+            clauses.append(f"c.PoliceStationID IN ({fragment})")
+            params.update(extra)
+        if filters.district_ids:
+            fragment, extra = in_clause("f_d", list(filters.district_ids))
+            clauses.append(f"u.DistrictID IN ({fragment})")
+            params.update(extra)
+        if filters.crime_sub_head_ids:
+            fragment, extra = in_clause("f_sh", list(filters.crime_sub_head_ids))
+            clauses.append(f"c.CrimeMinorHeadID IN ({fragment})")
+            params.update(extra)
+        if filters.crime_head_ids:
+            fragment, extra = in_clause("f_h", list(filters.crime_head_ids))
+            clauses.append(f"c.CrimeMajorHeadID IN ({fragment})")
+            params.update(extra)
+        if filters.date_from:
+            clauses.append("c.CrimeRegisteredDate >= :date_from")
+            params["date_from"] = filters.date_from.isoformat()
+        if filters.date_to:
+            clauses.append("c.CrimeRegisteredDate <= :date_to")
+            params["date_to"] = filters.date_to.isoformat()
+        return " WHERE " + " AND ".join(clauses), params
+
+    _FROM = (
+        " FROM curated_CaseMaster c"
+        " LEFT JOIN curated_Unit u ON u.UnitID = c.PoliceStationID"
+        " LEFT JOIN curated_District d ON d.DistrictID = u.DistrictID"
+        " LEFT JOIN curated_CrimeSubHead sh ON sh.CrimeSubHeadID = c.CrimeMinorHeadID"
+        " LEFT JOIN curated_CrimeHead h ON h.CrimeHeadID = c.CrimeMajorHeadID"
+    )
+
+    # ------------------------------------------------------------ timeseries
+    def monthly_counts(self, filters: AggregateFilter, scope: UnitScope) -> list[dict[str, Any]]:
+        where, params = self._predicate(filters, scope)
+        return self._store.query(
+            "SELECT substr(c.CrimeRegisteredDate, 1, 7) AS period, COUNT(*) AS case_count"
+            + self._FROM + where + " GROUP BY period ORDER BY period",
+            params,
+        )
+
+    def monthly_counts_by_sub_head(self, filters: AggregateFilter, scope: UnitScope) -> list[dict[str, Any]]:
+        where, params = self._predicate(filters, scope)
+        return self._store.query(
+            "SELECT substr(c.CrimeRegisteredDate, 1, 7) AS period, c.CrimeMinorHeadID AS sub_head_id,"
+            " sh.CrimeHeadName AS sub_head, COUNT(*) AS case_count"
+            + self._FROM + where + " GROUP BY period, sub_head_id, sub_head ORDER BY period",
+            params,
+        )
+
+    def daily_counts(self, filters: AggregateFilter, scope: UnitScope) -> list[dict[str, Any]]:
+        where, params = self._predicate(filters, scope)
+        return self._store.query(
+            "SELECT c.CrimeRegisteredDate AS period, COUNT(*) AS case_count"
+            + self._FROM + where + " GROUP BY period ORDER BY period",
+            params,
+        )
+
+    # --------------------------------------------------------------- breakdown
+    def counts_by_sub_head(self, filters: AggregateFilter, scope: UnitScope, limit: int = 20) -> list[dict[str, Any]]:
+        where, params = self._predicate(filters, scope)
+        params["limit"] = limit
+        return self._store.query(
+            "SELECT c.CrimeMinorHeadID AS sub_head_id, sh.CrimeHeadName AS sub_head,"
+            " h.CrimeGroupName AS crime_head, COUNT(*) AS case_count"
+            + self._FROM + where +
+            " GROUP BY sub_head_id, sub_head, crime_head ORDER BY case_count DESC LIMIT :limit",
+            params,
+        )
+
+    def counts_by_district(self, filters: AggregateFilter, scope: UnitScope) -> list[dict[str, Any]]:
+        where, params = self._predicate(filters, scope)
+        return self._store.query(
+            "SELECT u.DistrictID AS district_id, d.DistrictName AS district_name, COUNT(*) AS case_count"
+            + self._FROM + where + " GROUP BY district_id, district_name ORDER BY case_count DESC",
+            params,
+        )
+
+    def counts_by_unit(self, filters: AggregateFilter, scope: UnitScope) -> list[dict[str, Any]]:
+        where, params = self._predicate(filters, scope)
+        return self._store.query(
+            "SELECT c.PoliceStationID AS unit_id, u.UnitName AS unit_name, u.DistrictID AS district_id,"
+            " d.DistrictName AS district_name, COUNT(*) AS case_count"
+            + self._FROM + where + " GROUP BY unit_id, unit_name, district_id, district_name"
+            " ORDER BY case_count DESC",
+            params,
+        )
+
+    def counts_by_status(self, filters: AggregateFilter, scope: UnitScope) -> list[dict[str, Any]]:
+        where, params = self._predicate(filters, scope)
+        return self._store.query(
+            "SELECT c.CaseStatusID AS status_id, st.CaseStatusName AS status, COUNT(*) AS case_count"
+            + self._FROM + " LEFT JOIN curated_CaseStatusMaster st ON st.CaseStatusID = c.CaseStatusID"
+            + where + " GROUP BY status_id, status ORDER BY case_count DESC",
+            params,
+        )
+
+    def counts_by_hour(self, filters: AggregateFilter, scope: UnitScope) -> list[dict[str, Any]]:
+        where, params = self._predicate(filters, scope)
+        return self._store.query(
+            "SELECT substr(c.IncidentFromDate, 12, 2) AS hour_of_day, COUNT(*) AS case_count"
+            + self._FROM + where + " AND c.IncidentFromDate IS NOT NULL"
+            " GROUP BY hour_of_day ORDER BY hour_of_day",
+            params,
+        )
+
+    # ------------------------------------------------------------------- geo
+    def geo_points(self, filters: AggregateFilter, scope: UnitScope, limit: int = 20000) -> list[dict[str, Any]]:
+        where, params = self._predicate(filters, scope)
+        params["limit"] = limit
+        return self._store.query(
+            "SELECT c.CaseMasterID AS case_master_id, c.CrimeNo AS crime_no, c.latitude, c.longitude,"
+            " c.CrimeRegisteredDate AS registered_date, c.PoliceStationID AS unit_id,"
+            " u.DistrictID AS district_id, sh.CrimeHeadName AS sub_head"
+            + self._FROM + where + " AND c.latitude IS NOT NULL AND c.longitude IS NOT NULL"
+            " ORDER BY c.CrimeRegisteredDate DESC LIMIT :limit",
+            params,
+        )
+
+    # ---------------------------------------------------------- demographics
+    def victim_demographics(self, filters: AggregateFilter, scope: UnitScope) -> list[dict[str, Any]]:
+        where, params = self._predicate(filters, scope)
+        return self._store.query(
+            "SELECT sh.CrimeHeadName AS sub_head, v.GenderID AS gender,"
+            " CASE WHEN v.AgeYear IS NULL THEN 'unknown'"
+            "      WHEN v.AgeYear < 18 THEN '0-17'"
+            "      WHEN v.AgeYear < 30 THEN '18-29'"
+            "      WHEN v.AgeYear < 45 THEN '30-44'"
+            "      WHEN v.AgeYear < 60 THEN '45-59'"
+            "      ELSE '60+' END AS age_band,"
+            " COUNT(*) AS record_count"
+            + self._FROM + " JOIN curated_Victim v ON v.CaseMasterID = c.CaseMasterID"
+            + where + " GROUP BY sub_head, gender, age_band ORDER BY record_count DESC",
+            params,
+        )
+
+    def complainant_demographics(
+        self, filters: AggregateFilter, scope: UnitScope, *, dimension: str
+    ) -> list[dict[str, Any]]:
+        """Aggregate-only crosstab. ``dimension`` is a whitelisted column."""
+        dimension_sql = {
+            "occupation": ("o.OccupationName", "LEFT JOIN curated_OccupationMaster o ON o.OccupationID = cd.OccupationID"),
+            "religion": ("r.ReligionName", "LEFT JOIN curated_ReligionMaster r ON r.ReligionID = cd.ReligionID"),
+            "caste": ("ca.caste_master_name", "LEFT JOIN curated_CasteMaster ca ON ca.caste_master_id = cd.CasteID"),
+            "gender": ("cd.GenderID", ""),
+            "age_band": (
+                "CASE WHEN cd.AgeYear IS NULL THEN 'unknown'"
+                " WHEN cd.AgeYear < 18 THEN '0-17' WHEN cd.AgeYear < 30 THEN '18-29'"
+                " WHEN cd.AgeYear < 45 THEN '30-44' WHEN cd.AgeYear < 60 THEN '45-59'"
+                " ELSE '60+' END",
+                "",
+            ),
+        }
+        if dimension not in dimension_sql:
+            from ....domain.errors import ValidationError
+
+            raise ValidationError("Unsupported demographic dimension", dimension=dimension)
+        expression, join = dimension_sql[dimension]
+        where, params = self._predicate(filters, scope)
+        return self._store.query(
+            f"SELECT {expression} AS dimension_value, sh.CrimeHeadName AS sub_head, COUNT(*) AS record_count"
+            + self._FROM
+            + " JOIN curated_ComplainantDetails cd ON cd.CaseMasterID = c.CaseMasterID "
+            + join
+            + where
+            + " GROUP BY dimension_value, sub_head ORDER BY record_count DESC",
+            params,
+        )
+
+    def total_cases(self, filters: AggregateFilter, scope: UnitScope) -> int:
+        where, params = self._predicate(filters, scope)
+        rows = self._store.query("SELECT COUNT(*) AS n" + self._FROM + where, params)
+        return int(rows[0]["n"]) if rows else 0
+
+    def case_ids_for(self, filters: AggregateFilter, scope: UnitScope, limit: int = 200) -> list[dict[str, Any]]:
+        where, params = self._predicate(filters, scope)
+        params["limit"] = limit
+        return self._store.query(
+            "SELECT c.CaseMasterID AS case_master_id, c.CrimeNo AS crime_no"
+            + self._FROM + where + " ORDER BY c.CrimeRegisteredDate DESC LIMIT :limit",
+            params,
+        )
+
+    def data_coverage(self) -> dict[str, Any]:
+        rows = self._store.query(
+            "SELECT COUNT(*) AS case_count, MIN(CrimeRegisteredDate) AS first_date,"
+            " MAX(CrimeRegisteredDate) AS last_date FROM curated_CaseMaster"
+        )
+        return rows[0] if rows else {"case_count": 0, "first_date": None, "last_date": None}

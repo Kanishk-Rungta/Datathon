@@ -1,0 +1,26 @@
+{"CrimeSubHeadID": 101, "CrimeHeadID": 1, "CrimeHeadName": "Murder", "SeqID": 1}
+{"CrimeSubHeadID": 102, "CrimeHeadID": 1, "CrimeHeadName": "Attempt to Murder", "SeqID": 2}
+{"CrimeSubHeadID": 103, "CrimeHeadID": 1, "CrimeHeadName": "Grievous Hurt", "SeqID": 3}
+{"CrimeSubHeadID": 104, "CrimeHeadID": 1, "CrimeHeadName": "Simple Hurt", "SeqID": 4}
+{"CrimeSubHeadID": 105, "CrimeHeadID": 1, "CrimeHeadName": "Kidnapping and Abduction", "SeqID": 5}
+{"CrimeSubHeadID": 201, "CrimeHeadID": 2, "CrimeHeadName": "House Theft", "SeqID": 6}
+{"CrimeSubHeadID": 202, "CrimeHeadID": 2, "CrimeHeadName": "Motor Vehicle Theft", "SeqID": 7}
+{"CrimeSubHeadID": 203, "CrimeHeadID": 2, "CrimeHeadName": "Other Theft", "SeqID": 8}
+{"CrimeSubHeadID": 204, "CrimeHeadID": 2, "CrimeHeadName": "Burglary", "SeqID": 9}
+{"CrimeSubHeadID": 205, "CrimeHeadID": 2, "CrimeHeadName": "Robbery", "SeqID": 10}
+{"CrimeSubHeadID": 206, "CrimeHeadID": 2, "CrimeHeadName": "Dacoity", "SeqID": 11}
+{"CrimeSubHeadID": 207, "CrimeHeadID": 2, "CrimeHeadName": "Chain Snatching", "SeqID": 12}
+{"CrimeSubHeadID": 301, "CrimeHeadID": 3, "CrimeHeadName": "Assault on Women", "SeqID": 13}
+{"CrimeSubHeadID": 302, "CrimeHeadID": 3, "CrimeHeadName": "Cruelty by Husband or Relatives", "SeqID": 14}
+{"CrimeSubHeadID": 303, "CrimeHeadID": 3, "CrimeHeadName": "Dowry Related Offences", "SeqID": 15}
+{"CrimeSubHeadID": 401, "CrimeHeadID": 4, "CrimeHeadName": "Cheating", "SeqID": 16}
+{"CrimeSubHeadID": 402, "CrimeHeadID": 4, "CrimeHeadName": "Criminal Breach of Trust", "SeqID": 17}
+{"CrimeSubHeadID": 403, "CrimeHeadID": 4, "CrimeHeadName": "Forgery", "SeqID": 18}
+{"CrimeSubHeadID": 404, "CrimeHeadID": 4, "CrimeHeadName": "Online Financial Fraud", "SeqID": 19}
+{"CrimeSubHeadID": 501, "CrimeHeadID": 5, "CrimeHeadName": "Rioting", "SeqID": 20}
+{"CrimeSubHeadID": 502, "CrimeHeadID": 5, "CrimeHeadName": "Unlawful Assembly", "SeqID": 21}
+{"CrimeSubHeadID": 503, "CrimeHeadID": 5, "CrimeHeadName": "Criminal Intimidation", "SeqID": 22}
+{"CrimeSubHeadID": 601, "CrimeHeadID": 6, "CrimeHeadName": "Narcotic Drugs and Psychotropic Substances", "SeqID": 23}
+{"CrimeSubHeadID": 602, "CrimeHeadID": 6, "CrimeHeadName": "Excise Act Offences", "SeqID": 24}
+{"CrimeSubHeadID": 603, "CrimeHeadID": 6, "CrimeHeadName": "Gambling", "SeqID": 25}
+{"CrimeSubHeadID": 604, "CrimeHeadID": 6, "CrimeHeadName": "Arms Act Offences", "SeqID": 26}

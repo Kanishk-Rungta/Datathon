@@ -1,0 +1,1091 @@
+{
+  "seed": 20260725,
+  "anchor_date": "2026-07-25",
+  "target_cases": 4200,
+  "generated_cases": 4200,
+  "transactions": 3285,
+  "load": {
+    "tables": {
+      "curated_State": {
+        "raw": 6,
+        "curated": 6,
+        "unchanged": 0
+      },
+      "curated_District": {
+        "raw": 31,
+        "curated": 31,
+        "unchanged": 0
+      },
+      "curated_UnitType": {
+        "raw": 6,
+        "curated": 6,
+        "unchanged": 0
+      },
+      "curated_Unit": {
+        "raw": 221,
+        "curated": 221,
+        "unchanged": 0
+      },
+      "curated_Rank": {
+        "raw": 12,
+        "curated": 12,
+        "unchanged": 0
+      },
+      "curated_Designation": {
+        "raw": 8,
+        "curated": 8,
+        "unchanged": 0
+      },
+      "curated_Employee": {
+        "raw": 1173,
+        "curated": 1173,
+        "unchanged": 0
+      },
+      "curated_Court": {
+        "raw": 62,
+        "curated": 62,
+        "unchanged": 0
+      },
+      "curated_CaseCategory": {
+        "raw": 4,
+        "curated": 4,
+        "unchanged": 0
+      },
+      "curated_GravityOffence": {
+        "raw": 4,
+        "curated": 4,
+        "unchanged": 0
+      },
+      "curated_CaseStatusMaster": {
+        "raw": 8,
+        "curated": 8,
+        "unchanged": 0
+      },
+      "curated_ReligionMaster": {
+        "raw": 7,
+        "curated": 7,
+        "unchanged": 0
+      },
+      "curated_CasteMaster": {
+        "raw": 5,
+        "curated": 5,
+        "unchanged": 0
+      },
+      "curated_OccupationMaster": {
+        "raw": 13,
+        "curated": 13,
+        "unchanged": 0
+      },
+      "curated_CrimeHead": {
+        "raw": 6,
+        "curated": 6,
+        "unchanged": 0
+      },
+      "curated_CrimeSubHead": {
+        "raw": 26,
+        "curated": 26,
+        "unchanged": 0
+      },
+      "curated_Act": {
+        "raw": 9,
+        "curated": 9,
+        "unchanged": 0
+      },
+      "curated_Section": {
+        "raw": 50,
+        "curated": 50,
+        "unchanged": 0
+      },
+      "curated_CrimeHeadActSection": {
+        "raw": 52,
+        "curated": 52,
+        "unchanged": 0
+      },
+      "curated_CaseMaster": {
+        "raw": 4200,
+        "curated": 4200,
+        "unchanged": 0
+      },
+      "curated_ComplainantDetails": {
+        "raw": 4200,
+        "curated": 4200,
+        "unchanged": 0
+      },
+      "curated_Victim": {
+        "raw": 4728,
+        "curated": 4728,
+        "unchanged": 0
+      },
+      "curated_Accused": {
+        "raw": 5164,
+        "curated": 5164,
+        "unchanged": 0
+      },
+      "curated_ActSectionAssociation": {
+        "raw": 8400,
+        "curated": 8400,
+        "unchanged": 0
+      },
+      "curated_ArrestSurrender": {
+        "raw": 1248,
+        "curated": 1248,
+        "unchanged": 0
+      },
+      "curated_ChargesheetDetails": {
+        "raw": 1988,
+        "curated": 1988,
+        "unchanged": 0
+      }
+    },
+    "raw_rows": 31631,
+    "curated_rows": 31631,
+    "unchanged": 0
+  },
+  "data_quality": {
+    "checks": 13,
+    "passed": 13,
+    "warnings": []
+  },
+  "intelligence": {
+    "identities": 4009,
+    "review_links": 5668,
+    "auto_links": 4761,
+    "edges": 26444,
+    "offender_scores": 373,
+    "embedding_documents": 8400,
+    "hotspot_cells": 8,
+    "alerts": 2,
+    "priority_scores": 4200,
+    "timings_ms": {}
+  },
+  "users": [
+    {
+      "username": "io.bengaluru",
+      "role": "investigator",
+      "created": true,
+      "home_unit_id": 2023
+    },
+    {
+      "username": "analyst.state",
+      "role": "analyst",
+      "created": true,
+      "home_unit_id": null
+    },
+    {
+      "username": "sp.mysuru",
+      "role": "supervisor",
+      "created": true,
+      "home_unit_id": 2141
+    },
+    {
+      "username": "policy.home",
+      "role": "policymaker",
+      "created": true,
+      "home_unit_id": null
+    },
+    {
+      "username": "auditor.internal",
+      "role": "auditor",
+      "created": true,
+      "home_unit_id": null
+    },
+    {
+      "username": "admin.platform",
+      "role": "platform_admin",
+      "created": true,
+      "home_unit_id": null
+    }
+  ],
+  "manifest": {
+    "case_count": 4200,
+    "seed": 3840,
+    "anchor_date": "2026-07-25",
+    "hotspots": [
+      {
+        "district_id": 2922,
+        "district_name": "Mysuru",
+        "unit_id": 2143,
+        "centre_lat": 12.283756,
+        "centre_lon": 76.630161,
+        "radius_metres": 450,
+        "crime_sub_head_id": 202,
+        "planted_cases": 105
+      },
+      {
+        "district_id": 2912,
+        "district_name": "Davanagere",
+        "unit_id": 2078,
+        "centre_lat": 14.480373,
+        "centre_lon": 75.943373,
+        "radius_metres": 450,
+        "crime_sub_head_id": 207,
+        "planted_cases": 105
+      },
+      {
+        "district_id": 2925,
+        "district_name": "Shivamogga",
+        "unit_id": 2173,
+        "centre_lat": 13.916021,
+        "centre_lon": 75.558557,
+        "radius_metres": 450,
+        "crime_sub_head_id": 202,
+        "planted_cases": 105
+      }
+    ],
+    "surge": {
+      "district_id": 2902,
+      "district_name": "Ballari",
+      "crime_sub_head_id": 404,
+      "crime_sub_head_name": "Online Financial Fraud",
+      "window_days": 45
+    },
+    "ring": {
+      "members": [
+        "Savitha Jain",
+        "Ravi Gadag",
+        "J. Keshava Kadam",
+        "B. Eranna Inamdar",
+        "Rajesh Saldanha",
+        "Ambika Elimane",
+        "B. D. Byrappa Jain",
+        "R. B. Mallikarjun Hosamani",
+        "Usha Hosamani",
+        "D. Vincent Lamani"
+      ],
+      "variants": {
+        "Savitha Jain": [
+          "N. Savitha Jain",
+          "Savitha Jain"
+        ],
+        "Ravi Gadag": [
+          "P. Ravi Gadag",
+          "Ravi Gadag"
+        ],
+        "J. Keshava Kadam": [
+          "J. Keshava Kadam",
+          "Keshava Kadam"
+        ],
+        "B. Eranna Inamdar": [
+          "B. Eranna Inamdar",
+          "Eranna Inamdar"
+        ],
+        "Rajesh Saldanha": [
+          "P. Rajesh Saldanha",
+          "Rajesh Saldanha"
+        ],
+        "Ambika Elimane": [
+          "Ambika Elimane",
+          "B. Ambika Elimane"
+        ],
+        "B. D. Byrappa Jain": [
+          "B. Byrappa Jain",
+          "B. D. Byrappa Jain",
+          "Byrappa Jain"
+        ],
+        "R. B. Mallikarjun Hosamani": [
+          "Mallikarjun Hosamani",
+          "R. B. Malikarjun Hosamani",
+          "R. B. Mallikarjun Hosamani",
+          "R. B. Mallikarjuna Hosamani",
+          "R. Mallikarjun Hosamani"
+        ],
+        "Usha Hosamani": [
+          "K. Usha Hosamani",
+          "Usha Hosamani"
+        ],
+        "D. Vincent Lamani": [
+          "D. Vincent Lamani",
+          "Vincent Lamani"
+        ]
+      },
+      "case_count": 63
+    },
+    "repeat_offenders": [
+      {
+        "name": "D. Vincent Lamani",
+        "cases": 23
+      },
+      {
+        "name": "J. Keshava Kadam",
+        "cases": 23
+      },
+      {
+        "name": "Ambika Elimane",
+        "cases": 22
+      },
+      {
+        "name": "Ravi Gadag",
+        "cases": 22
+      },
+      {
+        "name": "Savitha Jain",
+        "cases": 21
+      },
+      {
+        "name": "Usha Hosamani",
+        "cases": 21
+      },
+      {
+        "name": "R. B. Mallikarjun Hosamani",
+        "cases": 20
+      },
+      {
+        "name": "B. Eranna Inamdar",
+        "cases": 20
+      },
+      {
+        "name": "Rajesh Saldanha",
+        "cases": 16
+      },
+      {
+        "name": "Y. Mustafa Patil",
+        "cases": 15
+      },
+      {
+        "name": "B. D. Byrappa Jain",
+        "cases": 15
+      },
+      {
+        "name": "Y. Ashok Pathan",
+        "cases": 13
+      },
+      {
+        "name": "N. Joseph Dsouza",
+        "cases": 12
+      },
+      {
+        "name": "B. Ambika Shetter",
+        "cases": 11
+      },
+      {
+        "name": "Divya Odeyar",
+        "cases": 11
+      }
+    ],
+    "district_case_counts": {
+      "Mysuru": 345,
+      "Chamarajanagara": 81,
+      "Davanagere": 208,
+      "Uttara Kannada": 86,
+      "Bengaluru City": 611,
+      "Haveri": 85,
+      "Udupi": 89,
+      "Vijayanagara": 69,
+      "Dharwad": 143,
+      "Ballari": 348,
+      "Bengaluru Rural": 109,
+      "Raichur": 86,
+      "Kalaburagi": 127,
+      "Vijayapura": 100,
+      "Dakshina Kannada": 177,
+      "Belagavi": 144,
+      "Yadgir": 55,
+      "Tumakuru": 120,
+      "Kolar": 90,
+      "Bagalkote": 94,
+      "Chikkaballapura": 92,
+      "Gadag": 60,
+      "Hassan": 103,
+      "Chitradurga": 79,
+      "Bidar": 87,
+      "Shivamogga": 247,
+      "Chikkamagaluru": 75,
+      "Ramanagara": 74,
+      "Mandya": 90,
+      "Koppal": 72,
+      "Kodagu": 54
+    },
+    "planted_identities": {
+      "S. V. Devaraj Naik": [
+        "Devaraj Naik",
+        "S. Devaraj Naik",
+        "S. V. Devaraj Naik",
+        "S. V. Devaraj Naika",
+        "S. V. Devaraj Nayak"
+      ],
+      "S. Praveen Chavan": [
+        "Praveen Chavan",
+        "S. Praveen Chavan"
+      ],
+      "L. Eranna Gadag": [
+        "Eranna Gadag",
+        "L. Eranna Gadag"
+      ],
+      "D. Vidya Tippanna": [
+        "D. Vidya Tippanna",
+        "Vidya Tippanna"
+      ],
+      "V. Mary Pathan": [
+        "Mary Pathan",
+        "V. Mary Pathan"
+      ],
+      "Byrappa Prasad": [
+        "A. Byrappa Prasad",
+        "Byrappa Prasad"
+      ],
+      "C. Y. Ashok Ijeri": [
+        "Ashok Ijeri",
+        "C. Ashok Ijeri",
+        "C. Y. Ashok Ijeri"
+      ],
+      "Bhaskar Ramanagar": [
+        "Bhaskar Ramanagar",
+        "H. Bhaskar Ramanagar"
+      ],
+      "V. Puttaswamy Fernandes": [
+        "Puttaswamy Fernandes",
+        "V. Puttaswamy Fernandes"
+      ],
+      "Harish Lobo": [
+        "Harish Lobo",
+        "P. Harish Lobo"
+      ],
+      "Channabasappa Gouda": [
+        "Channabasappa Gouda",
+        "D. Channabasappa Gouda"
+      ],
+      "L. A. Ravindra Poojary": [
+        "L. A. Ravindra Poojary",
+        "L. Ravindra Poojary",
+        "Ravindra Poojary"
+      ],
+      "Bharath Reddy": [
+        "B. Bharath Reddy",
+        "Bharath Readdy",
+        "Bharath Reddi",
+        "Bharath Reddy"
+      ],
+      "K. Shruthi Betageri": [
+        "K. Shruthi Betageri",
+        "Shruthi Betageri"
+      ],
+      "Basamma Pathan": [
+        "Basamma Pathan",
+        "G. Basamma Pathan"
+      ],
+      "Y. Mustafa Patil": [
+        "Mustafa Patil",
+        "Y. Mustafa Patil"
+      ],
+      "P. Padma Gadag": [
+        "P. Padma Gadag",
+        "Padma Gadag"
+      ],
+      "Vijay Monteiro": [
+        "R. Vijay Monteiro",
+        "Vijay Monteiro"
+      ],
+      "Sunil Shetty": [
+        "M. Sunil Shetty",
+        "Sunil Setty",
+        "Sunil Shetti",
+        "Sunil Shetty"
+      ],
+      "M. J. Rathnamma Pathan": [
+        "M. J. Rathnamma Pathan",
+        "M. Rathnamma Pathan",
+        "Rathnamma Pathan"
+      ],
+      "Fakruddin Gouda": [
+        "Fakruddin Gouda",
+        "G. Fakruddin Gouda"
+      ],
+      "Eranna Talwar": [
+        "Eranna Talwar",
+        "Y. Eranna Talwar"
+      ],
+      "Ganesh Rao": [
+        "A. Ganesh Rao",
+        "Ganesh Rao"
+      ],
+      "Vani Fernandes": [
+        "S. Vani Fernandes",
+        "Vani Fernandes"
+      ],
+      "Veeresh Shetty": [
+        "R. Veeresh Shetty",
+        "Veeresh Setty",
+        "Veeresh Shetti",
+        "Veeresh Shetty"
+      ],
+      "B. Byrappa Vaddar": [
+        "B. Byrappa Vaddar",
+        "Byrappa Vaddar"
+      ],
+      "Somashekar Mudhol": [
+        "M. Somashekar Mudhol",
+        "Somashekar Mudhol"
+      ],
+      "Rathnamma Doddamani": [
+        "P. Rathnamma Doddamani",
+        "Rathnamma Doddamani"
+      ],
+      "R. Nasreen Prasad": [
+        "Nasreen Prasad",
+        "R. Nasreen Prasad"
+      ],
+      "J. Vinod Lobo": [
+        "J. Vinod Lobo",
+        "Vinod Lobo"
+      ],
+      "N. Ibrahim Hunashimarad": [
+        "Ibrahim Hunashimarad",
+        "N. Ibrahim Hunashimarad"
+      ],
+      "P. Shruthi Shetter": [
+        "P. Shruthi Shetter",
+        "Shruthi Shetter"
+      ],
+      "D. Jayanthi Nayak": [
+        "D. Jayanthi Nayak",
+        "Jayanthi Nayak"
+      ],
+      "V. Sandeep Monteiro": [
+        "Sandeep Monteiro",
+        "V. Sandeep Monteiro"
+      ],
+      "Y. Suresh Deshpande": [
+        "Suresh Deshpande",
+        "Y. Suresh Deshpande",
+        "Y. Suresh Kumar Deshpande",
+        "Y. Suresha Deshpande"
+      ],
+      "J. Ashwath Khan": [
+        "Ashwath Khan",
+        "J. Ashwath Khan"
+      ],
+      "V. Imran Sheikh": [
+        "Imran Sheikh",
+        "V. Imran Shaik",
+        "V. Imran Shaikh",
+        "V. Imran Sheikh"
+      ],
+      "B. Usha Elimane": [
+        "B. Usha Elimane",
+        "Usha Elimane"
+      ],
+      "R. Yogesh Hosamani": [
+        "R. Yogesh Hosamani",
+        "Yogesh Hosamani"
+      ],
+      "G. B. Praveen Karajagi": [
+        "G. B. Praveen Karajagi",
+        "G. Praveen Karajagi",
+        "Praveen Karajagi"
+      ],
+      "S. Shobha Chikkanna": [
+        "S. Shobha Chikkanna",
+        "Shobha Chikkanna"
+      ],
+      "R. Veeresh Kamath": [
+        "R. Veeresh Kamath",
+        "Veeresh Kamath"
+      ],
+      "V. Shruthi Walikar": [
+        "Shruthi Walikar",
+        "V. Shruthi Walikar"
+      ],
+      "P. Rashmi Jain": [
+        "P. Rashmi Jain",
+        "Rashmi Jain"
+      ],
+      "D. A. Ganesh Badiger": [
+        "D. A. Ganesh Badiger",
+        "D. Ganesh Badiger",
+        "Ganesh Badiger"
+      ],
+      "Y. Rashmi Rao": [
+        "Rashmi Rao",
+        "Y. Rashmi Rao"
+      ],
+      "Bharath Talwar": [
+        "Bharath Talwar",
+        "Y. Bharath Talwar"
+      ],
+      "Sathish Hosamani": [
+        "Sathish Hosamani",
+        "Y. Sathish Hosamani"
+      ],
+      "Y. Ashok Pathan": [
+        "Ashok Pathan",
+        "Y. Ashok Pathan"
+      ],
+      "Girish Halakatti": [
+        "Girish Halakatti",
+        "K. Girish Halakatti"
+      ],
+      "N. T. Vasanthi Kelkar": [
+        "N. T. Vasanthi Kelkar",
+        "N. Vasanthi Kelkar",
+        "Vasanthi Kelkar"
+      ],
+      "Renuka Betageri": [
+        "Renuka Betageri",
+        "T. Renuka Betageri"
+      ],
+      "S. Manjunath Dandin": [
+        "Manjunath Dandin",
+        "S. Manju Nath Dandin",
+        "S. Manjunath Dandin",
+        "S. Manjunatha Dandin"
+      ],
+      "Manjunath Swamy": [
+        "Manju Nath Swamy",
+        "Manjunath Swamy",
+        "Manjunatha Swamy",
+        "R. Manjunath Swamy"
+      ],
+      "P. Padma Deshpande": [
+        "P. Padma Deshpande",
+        "Padma Deshpande"
+      ],
+      "Mohan Doddamani": [
+        "A. Mohan Doddamani",
+        "Mohan Doddamani"
+      ],
+      "Nasreen Kamath": [
+        "N. Nasreen Kamath",
+        "Nasreen Kamath"
+      ],
+      "Umesh Ansari": [
+        "B. Umesh Ansari",
+        "Umesh Ansari"
+      ],
+      "Shruthi Ijeri": [
+        "M. Shruthi Ijeri",
+        "Shruthi Ijeri"
+      ],
+      "P. Nasreen Bhandari": [
+        "Nasreen Bhandari",
+        "P. Nasreen Bhandari"
+      ],
+      "Krishna Halakatti": [
+        "J. Krishna Halakatti",
+        "Krishna Halakatti",
+        "Krishnappa Halakatti",
+        "Krisna Halakatti"
+      ],
+      "Siddappa Doddamani": [
+        "Siddappa Doddamani",
+        "V. Siddappa Doddamani"
+      ],
+      "R. N. Krishna Ramanagar": [
+        "Krishna Ramanagar",
+        "R. Krishna Ramanagar",
+        "R. N. Krishna Ramanagar",
+        "R. N. Krishnappa Ramanagar",
+        "R. N. Krisna Ramanagar"
+      ],
+      "B. Kiran Yaragatti": [
+        "B. Kiran Yaragatti",
+        "Kiran Yaragatti"
+      ],
+      "R. Chandrashekar Doddamani": [
+        "Chandrashekar Doddamani",
+        "R. Chandra Shekar Doddamani",
+        "R. Chandrashekar Doddamani",
+        "R. Chandrashekhar Doddamani"
+      ],
+      "Geetha Kamath": [
+        "Geetha Kamath",
+        "S. Geetha Kamath"
+      ],
+      "M. Renuka Pai": [
+        "M. Renuka Pai",
+        "Renuka Pai"
+      ],
+      "Bhagyamma Qureshi": [
+        "Bhagyamma Qureshi",
+        "L. Bhagyamma Qureshi"
+      ],
+      "B. Eranna Ballari": [
+        "B. Eranna Ballari",
+        "Eranna Ballari"
+      ],
+      "Veeresh Pai": [
+        "C. Veeresh Pai",
+        "Veeresh Pai"
+      ],
+      "Manjunath Patil": [
+        "H. Manjunath Patil",
+        "Manju Nath Patil",
+        "Manjunath Patil",
+        "Manjunatha Patil"
+      ],
+      "Anitha Palled": [
+        "Anitha Palled",
+        "D. Anitha Palled"
+      ],
+      "P. Somashekar Acharya": [
+        "P. Somashekar Acharya",
+        "Somashekar Acharya"
+      ],
+      "H. Deepa Ballari": [
+        "Deepa Ballari",
+        "H. Deepa Ballari"
+      ],
+      "Manjunath Pai": [
+        "A. Manjunath Pai",
+        "Manju Nath Pai",
+        "Manjunath Pai",
+        "Manjunatha Pai"
+      ],
+      "Vasanth Lobo": [
+        "B. Vasanth Lobo",
+        "Vasanth Lobo"
+      ],
+      "Vishwanath Chikkanna": [
+        "H. Vishwanath Chikkanna",
+        "Vishwanath Chikkanna"
+      ],
+      "Nagaraj Byrappa": [
+        "K. Nagaraj Byrappa",
+        "Naga Raj Byrappa",
+        "Nagaraj Byrappa",
+        "Nagaraja Byrappa"
+      ],
+      "T. N. Sumangala Vaddar": [
+        "Sumangala Vaddar",
+        "T. N. Sumangala Vaddar",
+        "T. Sumangala Vaddar"
+      ],
+      "V. R. Nagaraj Hosamani": [
+        "Nagaraj Hosamani",
+        "V. Nagaraj Hosamani",
+        "V. R. Naga Raj Hosamani",
+        "V. R. Nagaraj Hosamani",
+        "V. R. Nagaraja Hosamani"
+      ],
+      "M. C. Keshava Odeyar": [
+        "Keshava Odeyar",
+        "M. C. Keshava Odeyar",
+        "M. Keshava Odeyar"
+      ],
+      "T. Ravi Reddy": [
+        "Ravi Reddy",
+        "T. Ravi Readdy",
+        "T. Ravi Reddi",
+        "T. Ravi Reddy"
+      ],
+      "K. Nagaraj Rao": [
+        "K. Naga Raj Rao",
+        "K. Nagaraj Rao",
+        "K. Nagaraja Rao",
+        "Nagaraj Rao"
+      ],
+      "Pallavi Betageri": [
+        "A. Pallavi Betageri",
+        "Pallavi Betageri"
+      ],
+      "Sumangala Menezes": [
+        "N. Sumangala Menezes",
+        "Sumangala Menezes"
+      ],
+      "M. J. Byrappa Salunke": [
+        "Byrappa Salunke",
+        "M. Byrappa Salunke",
+        "M. J. Byrappa Salunke"
+      ],
+      "H. J. Bhaskar Lobo": [
+        "Bhaskar Lobo",
+        "H. Bhaskar Lobo",
+        "H. J. Bhaskar Lobo"
+      ],
+      "B. Ambika Shetter": [
+        "Ambika Shetter",
+        "B. Ambika Shetter"
+      ],
+      "Deepa Ganiger": [
+        "Deepa Ganiger",
+        "J. Deepa Ganiger"
+      ],
+      "T. D. Arun Rodrigues": [
+        "Arun Rodrigues",
+        "T. Arun Rodrigues",
+        "T. D. Arun Rodrigues"
+      ],
+      "Venkatesh Hunashimarad": [
+        "N. Venkatesh Hunashimarad",
+        "Venkatesh Hunashimarad",
+        "Venkatesh Kumar Hunashimarad",
+        "Venkatesha Hunashimarad"
+      ],
+      "N. Joseph Dsouza": [
+        "Joseph Dsouza",
+        "N. Joseph D Souza",
+        "N. Joseph DSouza",
+        "N. Joseph Dsouza"
+      ],
+      "B. Y. Somashekar Rai": [
+        "B. Somashekar Rai",
+        "B. Y. Somashekar Rai",
+        "Somashekar Rai"
+      ],
+      "R. Mustafa Salunke": [
+        "Mustafa Salunke",
+        "R. Mustafa Salunke"
+      ],
+      "Divya Hosamani": [
+        "Divya Hosamani",
+        "P. Divya Hosamani"
+      ],
+      "Yogesh Chavan": [
+        "H. Yogesh Chavan",
+        "Yogesh Chavan"
+      ],
+      "Ravi Pinto": [
+        "C. Ravi Pinto",
+        "Ravi Pinto"
+      ],
+      "K. Vinod Mathapati": [
+        "K. Vinod Mathapati",
+        "Vinod Mathapati"
+      ],
+      "Rashmi Joshi": [
+        "Rashmi Joshi",
+        "S. Rashmi Joshi"
+      ],
+      "J. N. Byrappa Vaddar": [
+        "Byrappa Vaddar",
+        "J. Byrappa Vaddar",
+        "J. N. Byrappa Vaddar"
+      ],
+      "N. N. Sandeep Elimane": [
+        "N. N. Sandeep Elimane",
+        "N. Sandeep Elimane",
+        "Sandeep Elimane"
+      ],
+      "Nithin Bhat": [
+        "Nithin Bhat",
+        "R. Nithin Bhat"
+      ],
+      "Nagesh Pathan": [
+        "Nagesh Pathan",
+        "V. Nagesh Pathan"
+      ],
+      "G. Netravathi Kamath": [
+        "G. Netravathi Kamath",
+        "Netravathi Kamath"
+      ],
+      "Y. Shantha Ansari": [
+        "Shantha Ansari",
+        "Y. Shantha Ansari"
+      ],
+      "Shivakumar Salunke": [
+        "Shiva Kumar Salunke",
+        "Shivakumar Salunke",
+        "Sivakumar Salunke",
+        "T. Shivakumar Salunke"
+      ],
+      "Chandrashekar Jadhav": [
+        "Chandra Shekar Jadhav",
+        "Chandrashekar Jadhav",
+        "Chandrashekhar Jadhav",
+        "P. Chandrashekar Jadhav"
+      ],
+      "Sathish Joshi": [
+        "C. Sathish Joshi",
+        "Sathish Joshi"
+      ],
+      "N. Ravi Nadagouda": [
+        "N. Ravi Nadagouda",
+        "Ravi Nadagouda"
+      ],
+      "A. B. Sharada Sheikh": [
+        "A. B. Sharada Shaik",
+        "A. B. Sharada Shaikh",
+        "A. B. Sharada Sheikh",
+        "A. Sharada Sheikh",
+        "Sharada Sheikh"
+      ],
+      "Chandrakala Byrappa": [
+        "Chandrakala Byrappa",
+        "R. Chandrakala Byrappa"
+      ],
+      "N. Eranna Lamani": [
+        "Eranna Lamani",
+        "N. Eranna Lamani"
+      ],
+      "P. Rathnamma Prasad": [
+        "P. Rathnamma Prasad",
+        "Rathnamma Prasad"
+      ],
+      "Chaitra Jamadar": [
+        "B. Chaitra Jamadar",
+        "Chaitra Jamadar"
+      ],
+      "Madhusudhan Sheikh": [
+        "H. Madhusudhan Sheikh",
+        "Madhusudhan Shaik",
+        "Madhusudhan Shaikh",
+        "Madhusudhan Sheikh"
+      ],
+      "R. Jayanthi Jain": [
+        "Jayanthi Jain",
+        "R. Jayanthi Jain"
+      ],
+      "Mallikarjun Ijeri": [
+        "A. Mallikarjun Ijeri",
+        "Malikarjun Ijeri",
+        "Mallikarjun Ijeri",
+        "Mallikarjuna Ijeri"
+      ],
+      "L. Vasanthi Gowda": [
+        "L. Vasanthi Gouda",
+        "L. Vasanthi Gowda",
+        "L. Vasanthi Gowdru",
+        "Vasanthi Gowda"
+      ],
+      "A. Y. Rekha Rao": [
+        "A. Rekha Rao",
+        "A. Y. Rekha Rao",
+        "Rekha Rao"
+      ],
+      "S. Nithin Pinto": [
+        "Nithin Pinto",
+        "S. Nithin Pinto"
+      ],
+      "B. Savitha Bhat": [
+        "B. Savitha Bhat",
+        "Savitha Bhat"
+      ],
+      "N. M. Salim Sheikh": [
+        "N. M. Salim Shaik",
+        "N. M. Salim Shaikh",
+        "N. M. Salim Sheikh",
+        "N. Salim Sheikh",
+        "Salim Sheikh"
+      ],
+      "V. V. Naveen Chavan": [
+        "Naveen Chavan",
+        "V. Naveen Chavan",
+        "V. V. Naveen Chavan"
+      ],
+      "Ravi Rao": [
+        "A. Ravi Rao",
+        "Ravi Rao"
+      ],
+      "Bhagyamma Lobo": [
+        "Bhagyamma Lobo",
+        "H. Bhagyamma Lobo"
+      ],
+      "Agnes Pinto": [
+        "Agnes Pinto",
+        "S. Agnes Pinto"
+      ],
+      "N. Venkatesh Nadagouda": [
+        "N. Venkatesh Kumar Nadagouda",
+        "N. Venkatesh Nadagouda",
+        "N. Venkatesha Nadagouda",
+        "Venkatesh Nadagouda"
+      ],
+      "Prakash Jakati": [
+        "H. Prakash Jakati",
+        "Prakash Jakati"
+      ],
+      "Grace Kulkarni": [
+        "Grace Kulakarni",
+        "Grace Kulkarni",
+        "Grace Kulkarny",
+        "T. Grace Kulkarni"
+      ],
+      "Usha Patil": [
+        "R. Usha Patil",
+        "Usha Patil"
+      ],
+      "Ningappa Patil": [
+        "G. Ningappa Patil",
+        "Ningappa Patil"
+      ],
+      "L. Basavaraj Odeyar": [
+        "Basavaraj Odeyar",
+        "L. Basava Raj Odeyar",
+        "L. Basavaraj Odeyar",
+        "L. Basavaraja Odeyar"
+      ],
+      "Hanumantha Ramanagar": [
+        "B. Hanumantha Ramanagar",
+        "Hanumantha Ramanagar"
+      ],
+      "Divya Odeyar": [
+        "Divya Odeyar",
+        "Y. Divya Odeyar"
+      ],
+      "H. Y. Krishna Karajagi": [
+        "H. Krishna Karajagi",
+        "H. Y. Krishna Karajagi",
+        "H. Y. Krishnappa Karajagi",
+        "H. Y. Krisna Karajagi",
+        "Krishna Karajagi"
+      ],
+      "Umesh Hiremath": [
+        "A. Umesh Hiremath",
+        "Umesh Hiremath"
+      ],
+      "V. K. Vasanthi Elimane": [
+        "V. K. Vasanthi Elimane",
+        "V. Vasanthi Elimane",
+        "Vasanthi Elimane"
+      ],
+      "Umesh Hegde": [
+        "J. Umesh Hegde",
+        "Umesh Hegade",
+        "Umesh Hegde",
+        "Umesh Hegdey"
+      ],
+      "Padma Halakatti": [
+        "C. Padma Halakatti",
+        "Padma Halakatti"
+      ],
+      "Salim Mathapati": [
+        "G. Salim Mathapati",
+        "Salim Mathapati"
+      ],
+      "Savitha Jain": [
+        "N. Savitha Jain",
+        "Savitha Jain"
+      ],
+      "Ravi Gadag": [
+        "P. Ravi Gadag",
+        "Ravi Gadag"
+      ],
+      "J. Keshava Kadam": [
+        "J. Keshava Kadam",
+        "Keshava Kadam"
+      ],
+      "B. Eranna Inamdar": [
+        "B. Eranna Inamdar",
+        "Eranna Inamdar"
+      ],
+      "Rajesh Saldanha": [
+        "P. Rajesh Saldanha",
+        "Rajesh Saldanha"
+      ],
+      "Ambika Elimane": [
+        "Ambika Elimane",
+        "B. Ambika Elimane"
+      ],
+      "B. D. Byrappa Jain": [
+        "B. Byrappa Jain",
+        "B. D. Byrappa Jain",
+        "Byrappa Jain"
+      ],
+      "R. B. Mallikarjun Hosamani": [
+        "Mallikarjun Hosamani",
+        "R. B. Malikarjun Hosamani",
+        "R. B. Mallikarjun Hosamani",
+        "R. B. Mallikarjuna Hosamani",
+        "R. Mallikarjun Hosamani"
+      ],
+      "Usha Hosamani": [
+        "K. Usha Hosamani",
+        "Usha Hosamani"
+      ],
+      "D. Vincent Lamani": [
+        "D. Vincent Lamani",
+        "Vincent Lamani"
+      ]
+    }
+  },
+  "duration_seconds": 58.01
+}
