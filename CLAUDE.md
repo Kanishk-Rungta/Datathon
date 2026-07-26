@@ -107,24 +107,30 @@ Roles: `io.bengaluru` (station scope), `analyst.state`, `sp.mysuru`,
 
 ## 5. Status
 
-**All 30 Definition-of-Done items are implemented.** 201 tests pass.
+**All 30 Definition-of-Done items are implemented.** 316 tests (311 run
+locally; 5 live-Catalyst smoke tests skip without credentials).
+
+V2 progress against `implementationv2.md` is recorded in
+[docs/v2-progress.md](docs/v2-progress.md) — read it before starting V2 work,
+it says what is done, what is blocked, and on what.
 
 | Area | State |
 |---|---|
 | Domain, config, ports | complete |
 | SQLite adapter, migrations, 26 curated + control + intelligence tables | complete |
-| Repositories (14) | complete |
+| Repositories (15) | complete |
 | Deterministic services (7) | complete |
-| Analytics engine + pure stats | complete |
-| Entity resolution, graph builder, NetworkX queries, financial | complete |
+| Analytics engine + pure stats | complete (trend, hotspot, early warning, seasonality, event comparison, sociology, IPI) |
+| Entity resolution, graph builder, NetworkX queries, financial | complete, calibrated |
 | RAG (ACL-prefiltered hybrid retrieval) | complete |
-| NLU (13 intents, deterministic) | complete |
+| NLU (14 intents, deterministic) | complete |
 | Five agents + supervisor | complete |
 | Pipeline (generate → land → load → DQ → intelligence) | complete |
-| FastAPI, 36 endpoints, RFC 9457, correlation IDs | complete |
+| FastAPI, 39 endpoints, RFC 9457, correlation IDs | complete |
 | React console (chat, evidence, charts, graph, review queue) | complete |
-| Catalyst adapter + deployment shell | complete, **not run against live Catalyst** |
-| Tests: 201 (unit + integration) | passing |
+| Catalyst adapters (Data Store, Stratus, NoSQL, Cache, Identity) | complete, **not run against live Catalyst** |
+| Agent evaluation corpus + harness | complete (Levels A/B; Level C needs a live provider) |
+| Tests: 316 (unit + integration + evals) | passing |
 | ADRs 0001–0006 | complete |
 
 ### Known limitations (stated, not hidden)
@@ -141,6 +147,15 @@ Roles: `io.bengaluru` (station scope), `analyst.state`, `sp.mysuru`,
   Bhashini.
 - `sample_stddev` is used for the early-warning baseline; with very short
   histories the z-score floor (1.0) does most of the work.
+- **Seasonality needs two prior years per calendar month.** Below that a bucket
+  is marked `insufficient_history` and reports no deviation, so a 24-month seed
+  yields few reportable months. That is intended, not a bug.
+- **The ZCQL upsert emulation is not atomic.** `INSERT … ON CONFLICT` is
+  translated to read-then-write; concurrent writers can duplicate. Every caller
+  is a replayable pipeline stage on a deterministic key. Do not use it for a
+  counter.
+- **Event comparison shows coincidence, never cause.** The result type has no
+  causal field and a test asserts it stays that way.
 
 ---
 
@@ -166,6 +181,12 @@ Roles: `io.bengaluru` (station scope), `analyst.state`, `sp.mysuru`,
   are `exports/<user_id>/...`. See `authorize_file_access`.
 - **Hotspot cases are planted inside the 90-day detection window** on purpose.
   Spreading them over the full period makes the validation loop meaningless.
+- **Backend selectors are independent switches.** `DATASTORE_BACKEND=catalyst`
+  with `FILESTORE_BACKEND=local` is refused at startup: exports on a function
+  filesystem vanish at the next cold start. See `Settings.deployment_problems`.
+- **Conflicting initials demote an ER pair to review**, they do not veto it.
+  "K. Prakash Naik" vs "M. Prakash Naik" scored 0.94 and auto-linked before
+  this was added. See `tests/unit/test_entity_resolution_calibration.py`.
 - `AnalyticsEngine.investigation_priority` takes keyword-only primitives;
   callers with a `CaseSummary` should use `priority_for_summary`.
 

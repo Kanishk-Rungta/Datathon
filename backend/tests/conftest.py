@@ -16,6 +16,13 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
+# Makes the evaluation harness importable as ``evals.harness`` from any test
+# module. The tests tree is intentionally not a package (pytest imports test
+# files as top-level modules), so the shared helper is reached this way.
+TESTS_ROOT = Path(__file__).resolve().parent
+if str(TESTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(TESTS_ROOT))
+
 from ksp_cip.config import Settings  # noqa: E402
 from ksp_cip.interface.container import build_container  # noqa: E402
 
