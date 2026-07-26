@@ -35,12 +35,23 @@ provisioned differently than what's on disk.
 
 ## Applying it
 
-1. For each table in the manifest, create the equivalent Catalyst Data Store
-   table **through the console** — this is confirmed to be the only path (see
-   below). Run `python scripts/generate_catalyst_console_checklist.py` and
-   follow `docs/deployment/catalyst-schema-console-checklist.md` column by
-   column; it already encodes the type/uniqueness adaptations below so no
-   per-column judgment call is needed at provisioning time.
+1. Create the tables and columns. Preferred:
+
+   ```bash
+   node scripts/provision_catalyst_datastore.js --dry-run   # print the plan
+   node scripts/provision_catalyst_datastore.js             # apply it
+   ```
+
+   It is idempotent — existing tables/columns are skipped and never altered,
+   so a partial run is simply re-run. It requires `catalyst login` and a
+   `.catalystrc` in the repo root, and provisions whichever project that file
+   points at.
+
+   Fallback, if the undocumented API contract ever changes and the script's
+   discovery step fails: `python scripts/generate_catalyst_console_checklist.py`
+   produces `docs/deployment/catalyst-schema-console-checklist.md`, the same
+   schema as a manual console checklist. Both encode identical
+   type/uniqueness adaptations, so neither needs a per-column judgment call.
 2. Foreign keys in this manifest are **documentation of intent**, not a Data
    Store constraint to necessarily enforce identically — Catalyst's own
    constraint model may differ; enforce referential integrity the way the
@@ -78,12 +89,20 @@ port on every table and column, for the schema as it exists on disk right now
 **Verified against the live KSP-CIP Development project (console UI,
 Zoho's own documentation, and the CLI's own source):**
 
-- Table and column creation is **console-UI-only**. There is no REST API, no
-  CLI command, and no IaC-into-an-existing-project path — the CLI's own
-  Data Store client (`zcatalyst-cli/lib/endpoints/lib/datastore.js`) only
-  exposes `GET` (list tables, get columns), never a create. `iac:export`/
-  `iac:import` round-trip whole-project clones, not schema injection into an
-  already-linked project.
+- There is **no CLI command** for creating tables or columns, and
+  `iac:import` can only create a *new* project, never inject schema into an
+  already-linked one. The CLI's own Data Store client
+  (`zcatalyst-cli/lib/endpoints/lib/datastore.js`) exposes only `GET`.
+- **But the admin REST API does support it.** The CLI's OAuth scopes include
+  `ZohoCatalyst.tables.ALL` and `ZohoCatalyst.tables.columns.ALL` — `ALL`,
+  not `READ` — and `POST /baas/v1/project/{id}/table` with
+  `{"table_name": "..."}` was confirmed live to return 200, with `DELETE
+  /table/{table_id}` cleaning up after it. So "console-only" is true of the
+  *CLI and documentation*, not of the platform. This is what
+  `scripts/provision_catalyst_datastore.js` uses.
+  The endpoints are undocumented, so that script discovers the accepted
+  column payload against a throwaway table before touching real ones rather
+  than hard-coding a guessed contract.
 - Column types actually offered: `Text`, `Var Char`, `Date`, `DateTime`,
   `Int`, `Double`, `Boolean`, `Bigint`, `Foreign Key`, `Encrypted Text`.
   `schema.sql`'s three SQLite types map as: `TEXT` → `Text` (or `Var Char`
