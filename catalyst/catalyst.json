@@ -1,23 +1,14 @@
 {
   "project_name": "ksp-cip",
   "project_id": "${CATALYST_PROJECT_ID}",
-  "comment": "Deployment descriptor. Every component maps 1:1 to a module that already runs locally; nothing here is a re-implementation.",
+  "comment": "Deployment descriptor. Every component maps 1:1 to a module that already runs locally; nothing here is a re-implementation. See docs/deployment/catalyst-runtime.md for why cip-api is an AppSail service, not an Advanced I/O function.",
   "functions": [
-    {
-      "name": "cip_api",
-      "type": "advancedio",
-      "stack": "python3.9",
-      "source": "functions/cip_api",
-      "description": "Serves the FastAPI application. The same ASGI app object used locally.",
-      "memory": 512,
-      "timeout": 30
-    },
     {
       "name": "cip_refresh",
       "type": "event",
-      "stack": "python3.9",
+      "stack": "python3.11",
       "source": "functions/cip_refresh",
-      "description": "Runs the intelligence refresh (entity resolution, graph, embeddings, hotspots, alerts, priority).",
+      "description": "Runs one pipeline stage (ingest, data_quality, intelligence, retention) per Circuit invocation.",
       "memory": 1024,
       "timeout": 900
     }
@@ -27,12 +18,18 @@
       "name": "cip-console",
       "source": "appsail/console",
       "stack": "node18",
-      "description": "Static React console. Serves frontend/dist and proxies /api to the function."
+      "description": "Static React console. Serves frontend/dist and proxies /api to the cip-api AppSail service."
+    },
+    {
+      "name": "cip-api",
+      "source": "appsail/api",
+      "stack": "python3_11",
+      "description": "Runs the FastAPI application (ksp_cip.interface.api.main:get_app) under uvicorn. Replaces a prior Advanced I/O function whose handler had no documented ASGI bridge -- see docs/deployment/catalyst-runtime.md."
     }
   ],
   "datastore": {
     "tables_from": "backend/ksp_cip/infrastructure/db/schema.sql",
-    "note": "Table definitions are generated from the same schema file the SQLite adapter applies, so the two backends cannot drift."
+    "note": "Table definitions are generated from the same schema file the SQLite adapter applies, so the two backends cannot drift. Provisioning is manual/reviewed, not an application-startup executescript() call -- see docs/deployment/catalyst-schema.md."
   },
   "stratus": {
     "buckets": [

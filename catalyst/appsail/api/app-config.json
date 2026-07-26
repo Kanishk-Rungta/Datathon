@@ -1,0 +1,7 @@
+{
+  "name": "cip-api",
+  "stack": "python3_11",
+  "command": "python3 -u server.py",
+  "port": 9000,
+  "comment": "Runs ksp_cip.interface.api.main:get_app via uvicorn. The exact 'stack' identifier must be confirmed against the target project's supported Python runtimes at provisioning time -- see docs/deployment/catalyst-runtime.md."
+}

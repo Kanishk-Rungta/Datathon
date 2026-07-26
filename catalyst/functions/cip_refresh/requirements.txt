@@ -1,8 +1,10 @@
-fastapi>=0.110
+# This function never imports ksp_cip.interface.api (build_container() does
+# not touch it), so fastapi/python-multipart are not needed here even though
+# they are project-wide dependencies. Verified by static import scan; see
+# scripts/build_catalyst_artifact.py, which checks this at build time rather
+# than trusting this list to stay accurate by hand.
 pydantic>=2.6
 pydantic-settings>=2.2
-python-multipart>=0.0.9
 numpy>=1.26
 networkx>=3.2
 reportlab>=4.1
-jinja2>=3.1

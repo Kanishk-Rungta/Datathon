@@ -15,6 +15,22 @@ class TestHealthAndCapabilities:
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
 
+    def test_readiness_distinguishes_configuration_from_seeding(self, client):
+        payload = client.get("/api/v1/health/ready").json()
+        assert "configuration_valid" in payload
+        assert "configuration_problems" in payload
+        assert payload["configuration_valid"] is True
+        assert payload["configuration_problems"] == []
+
+    def test_readiness_reports_the_offline_language_fallback_without_failing(self, client):
+        """The local build's Kannada glossary is a stated, known limitation --
+        it must be visible in degraded_optional_services, but must not turn
+        readiness false the way a real system-of-record failure would."""
+        payload = client.get("/api/v1/health/ready").json()
+        assert "degraded_optional_services" in payload
+        assert any("language" in note for note in payload["degraded_optional_services"])
+        assert payload["ready"] is True
+
     def test_capabilities_states_what_is_and_is_not_full_fidelity(self, client, tokens):
         payload = client.get("/api/v1/capabilities", headers=auth(tokens, "analyst")).json()
         assert len(payload["agents"]) == 5

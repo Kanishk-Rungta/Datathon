@@ -1,4 +1,0 @@
-{
-  "deployment": { "name": "cip_api", "type": "advancedio", "stack": "python3.9", "memory": 512, "timeout": 30 },
-  "execution": { "main": "main.py" }
-}
