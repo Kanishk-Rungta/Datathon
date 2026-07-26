@@ -42,6 +42,7 @@ from .routers import (
     health,
     investigation,
     session,
+    voice,
 )
 
 LOGGER = get_logger(__name__)
@@ -164,6 +165,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(export.router, prefix=prefix)
     app.include_router(files.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
+    app.include_router(voice.router, prefix=prefix)
 
     @app.on_event("startup")
     async def warm_caches() -> None:

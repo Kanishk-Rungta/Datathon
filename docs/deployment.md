@@ -66,9 +66,13 @@ Data residency: keep every URL on `.zoho.in`. The defaults already do.
 
 | Variable | Notes |
 |---|---|
-| `KSPCIP_LANGUAGE_PROVIDER` | `local` \| `bhashini` |
+| `KSPCIP_LANGUAGE_PROVIDER` | `local` \| `bhashini` \| `ai4bharat` |
 | `KSPCIP_BHASHINI_USER_ID` / `KSPCIP_BHASHINI_API_KEY` | **secret**; both required for `bhashini` |
 | `KSPCIP_BHASHINI_PIPELINE_ID` | Pipeline identifier |
+| `KSPCIP_AI4BHARAT_BASE_URL` | Required for `ai4bharat`. **Not a secret** — it is the URL of a speech service you host yourself (`speech-service/`), so there is no vendor account or key. See [voice-ai4bharat.md](voice-ai4bharat.md) |
+| `KSPCIP_AI4BHARAT_ASR_MODEL` / `_TTS_MODEL` / `_TTS_SPEAKER` | Model selection |
+| `KSPCIP_AI4BHARAT_TIMEOUT_SECONDS` | Default 60 |
+| `KSPCIP_VOICE_MAX_AUDIO_BYTES` | Default 10 MB. Provider-neutral ceiling on one uploaded utterance, enforced at the HTTP boundary *and* in the adapter |
 | `KSPCIP_LLM_PROVIDER` | `local` \| `anthropic` \| `gemini` \| `groq` \| `openai_compatible` |
 | `KSPCIP_LLM_API_KEY` | **secret**; required for any non-local provider |
 | `KSPCIP_LLM_MODEL` / `KSPCIP_LLM_BASE_URL` | Provider-specific |

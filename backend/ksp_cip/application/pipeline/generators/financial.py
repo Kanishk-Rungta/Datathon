@@ -31,7 +31,17 @@ def generate_transactions(
     *,
     anchor: date,
     entity_count: int = 40,
+    burst_spec: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    """Generate the synthetic transaction extension.
+
+    If ``burst_spec`` is passed it is **populated** with the account and day
+    given a deliberate spike, so an integration test can assert the burst
+    analysis recovers it — the same planted-signal discipline the surge,
+    hotspots and network ring already use. Without a planted burst the ordinary
+    generator never produces more than two transfers per account per day, so
+    the analysis would have nothing to find and the code path would be untested.
+    """
     entities = [
         {
             "ref": f"E{index:05d}",
@@ -105,7 +115,46 @@ def generate_transactions(
                     "is_extension": 1,
                 })
                 counter += 1
+
+    # A deliberate spike: one account, one day, well above its own norm, and a
+    # quiet run-up before it so the account has a dormant baseline to stand out
+    # against. Planted last so it cannot perturb anything above.
+    if burst_spec is not None and rows and entities:
+        burst_entity = entities[0]
+        burst_day = anchor - timedelta(days=45)
+        # Sparse prior activity establishes "normal" for this account.
+        for offset in (40, 33, 26, 19, 12):
+            partner = entities[(offset % (len(entities) - 1)) + 1]
+            rows.append(_entity_row(counter, burst_entity, partner,
+                                    burst_day - timedelta(days=offset), _amount(rng)))
+            counter += 1
+        burst_count = 9
+        for index in range(burst_count):
+            partner = entities[(index % (len(entities) - 1)) + 1]
+            rows.append(_entity_row(counter, burst_entity, partner, burst_day, _amount(rng)))
+            counter += 1
+        burst_spec.update({
+            "ref": burst_entity["ref"],
+            "label": burst_entity["label"],
+            "day": burst_day.isoformat(),
+            "txn_count": burst_count,
+        })
     return rows
+
+
+def _entity_row(counter: int, source: dict[str, Any], target: dict[str, Any],
+                txn_date: date, amount: float) -> dict[str, Any]:
+    return {
+        "txn_id": f"TX{counter:08d}",
+        "case_master_id": None,
+        "from_kind": "entity", "from_ref": source["ref"], "from_label": source["label"],
+        "to_kind": "entity", "to_ref": target["ref"], "to_label": target["label"],
+        "amount": amount,
+        "currency": "INR",
+        "txn_date": txn_date.isoformat(),
+        "channel": "NEFT",
+        "is_extension": 1,
+    }
 
 
 def _amount(rng: random.Random, *, large: bool = False) -> float:

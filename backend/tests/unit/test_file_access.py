@@ -10,6 +10,7 @@ from ksp_cip.application.services.authorization import ROLE_PERMISSIONS
 from ksp_cip.domain.enums import Role
 from ksp_cip.domain.errors import AuthorizationError
 from ksp_cip.domain.models import Principal, UnitScope
+from ksp_cip.interface.api.routers.chat import audio_key
 from ksp_cip.interface.api.routers.files import authorize_file_access, resolve_owner
 
 OWNER = "a" * 32
@@ -63,6 +64,46 @@ class TestRestrictedAreas:
     def test_an_admin_may_read_the_landing_zone(self):
         assert authorize_file_access(person(Role.PLATFORM_ADMIN, OWNER),
                                      "landing/curated_CaseMaster/b.ndjson") == "platform"
+
+
+class TestSynthesisedAudioIsOwned:
+    """Synthesised speech must be reachable by the user who asked for it.
+
+    This class exists because it was not. The key was built as
+    ``audio/<session_id>/...``, but ownership is attributed from the *first*
+    path segment, so the object resolved to no owner and
+    ``authorize_file_access`` refused to serve it — to everyone, including the
+    person who had just requested it. It stayed invisible only because no
+    configured provider ever returned audio bytes to write.
+    """
+
+    def test_a_user_can_read_the_audio_they_requested(self):
+        key = audio_key(OWNER, "session-1", "ನಿಮ್ಮ ಉತ್ತರ")
+        assert authorize_file_access(person(Role.INVESTIGATOR, OWNER), key) == OWNER
+
+    def test_another_user_cannot_read_it(self):
+        key = audio_key(OWNER, "session-1", "ನಿಮ್ಮ ಉತ್ತರ")
+        with pytest.raises(AuthorizationError):
+            authorize_file_access(person(Role.INVESTIGATOR, OTHER), key)
+
+    def test_the_owner_segment_is_the_user_not_the_session(self):
+        # The regression itself: a session-keyed object is unattributable.
+        assert resolve_owner(audio_key(OWNER, "session-1", "text")) == OWNER
+        assert resolve_owner("audio/session-1/deadbeef.wav") is None
+
+    def test_a_session_id_cannot_smuggle_extra_path_segments(self):
+        key = audio_key(OWNER, "../../etc/passwd", "text")
+        assert ".." not in key.split("/")
+        assert authorize_file_access(person(Role.INVESTIGATOR, OWNER), key) == OWNER
+
+    def test_the_key_is_stable_across_processes(self):
+        """``hash()`` is salted per interpreter; a content digest is not.
+
+        An unstable key re-synthesises audio that already exists and leaves the
+        old object orphaned on every restart.
+        """
+        assert audio_key(OWNER, "s", "same text") == audio_key(OWNER, "s", "same text")
+        assert audio_key(OWNER, "s", "a") != audio_key(OWNER, "s", "b")
 
 
 class TestPathSafety:

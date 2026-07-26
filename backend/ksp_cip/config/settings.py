@@ -78,6 +78,13 @@ class IdentityBackend(StrEnum):
     CATALYST = "catalyst"
 
 
+class GraphBackend(StrEnum):
+    """Graph traversal engine backend (in-memory NetworkX vs enterprise Neo4j)."""
+
+    NETWORKX = "networkx"
+    NEO4J = "neo4j"
+
+
 class LLMProviderName(StrEnum):
     """Reasoning/paraphrase providers behind the LLM Gateway.
 
@@ -96,6 +103,7 @@ class LLMProviderName(StrEnum):
 class LanguageProviderName(StrEnum):
     LOCAL = "local"
     BHASHINI = "bhashini"
+    AI4BHARAT = "ai4bharat"
 
 
 class Settings(BaseSettings):
@@ -119,6 +127,10 @@ class Settings(BaseSettings):
     keyvalue_backend: KeyValueBackend = KeyValueBackend.RELATIONAL
     cache_backend: CacheBackend = CacheBackend.MEMORY
     identity_backend: IdentityBackend = IdentityBackend.LOCAL
+    graph_backend: GraphBackend = GraphBackend.NETWORKX
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = "password"
     sqlite_path: Path = Field(default=BACKEND_ROOT / "var" / "ksp_cip.db")
     filestore_root: Path = Field(default=BACKEND_ROOT / "var" / "filestore")
     sqlite_timeout_seconds: float = 30.0
@@ -158,6 +170,22 @@ class Settings(BaseSettings):
     bhashini_api_key: str | None = None
     bhashini_pipeline_id: str = "64392f96daac500b55c543cd"
     bhashini_timeout_seconds: float = 45.0
+
+    # AI4Bharat runs as a *self-hosted* speech service (see docs/voice-ai4bharat.md).
+    # There is no vendor account and no API key: the only required setting is the
+    # URL of the service you run, which is why nothing here is marked secret.
+    ai4bharat_base_url: str | None = None
+    ai4bharat_timeout_seconds: float = 60.0
+    ai4bharat_asr_model: str = "ai4bharat/indic-conformer-600m-multilingual"
+    ai4bharat_tts_model: str = "ai4bharat/indic-parler-tts"
+    ai4bharat_tts_speaker: str = "female"
+
+    #: Hard ceiling on one uploaded utterance, enforced at the HTTP boundary
+    #: *and* again in the adapter. 10 MB of 16 kHz mono PCM is ~5 minutes — far
+    #: longer than a spoken question, and small enough that a malformed or
+    #: hostile upload cannot exhaust the request worker. Provider-neutral on
+    #: purpose: the limit protects the API, not a particular vendor.
+    voice_max_audio_bytes: int = 10 * 1024 * 1024
 
     # ------------------------------------------------------------- embeddings
     embedding_model_name: str = "hashed-char-ngram-tfidf-v1"
@@ -256,6 +284,12 @@ class Settings(BaseSettings):
         ):
             problems.append(
                 "KSPCIP_BHASHINI_USER_ID and KSPCIP_BHASHINI_API_KEY must be set for the Bhashini provider"
+            )
+
+        if self.language_provider is LanguageProviderName.AI4BHARAT and not self.ai4bharat_base_url:
+            problems.append(
+                "KSPCIP_AI4BHARAT_BASE_URL must be set for the AI4Bharat provider "
+                "(the URL of the speech service you host)"
             )
 
         if self.llm_provider is not LLMProviderName.LOCAL and not self.llm_api_key:

@@ -234,7 +234,7 @@ def _audio_format(mime_type: str) -> str:
     return mapping.get(mime_type.split(";")[0].strip().lower(), "wav")
 
 
-def build_language_service(settings: Settings) -> LocalLexiconLanguageService | BhashiniLanguageService:
+def build_language_service(settings: Settings) -> Any:
     from ...config.settings import LanguageProviderName
 
     local = LocalLexiconLanguageService()
@@ -243,4 +243,13 @@ def build_language_service(settings: Settings) -> LocalLexiconLanguageService | 
             return BhashiniLanguageService(settings, fallback=local)
         except ProviderError as exc:
             LOGGER.warning("bhashini_unavailable_using_local", extra={"error": str(exc)})
+    elif settings.language_provider is LanguageProviderName.AI4BHARAT:
+        # Imported here rather than at module scope so the local default never
+        # pays for a module it will not use, matching the Bhashini branch.
+        from .ai4bharat import AI4BharatLanguageService
+
+        try:
+            return AI4BharatLanguageService(settings, fallback=local)
+        except ProviderError as exc:
+            LOGGER.warning("ai4bharat_unavailable_using_local", extra={"error": str(exc)})
     return local
