@@ -346,16 +346,46 @@ class CaseRepository:
         if not case_ids:
             return []
         fragment, params = in_clause("cid", list(case_ids))
-        return self._store.query(
-            "SELECT asa.CaseMasterID, asa.ActID, asa.SectionID, asa.ActOrderID, asa.SectionOrderID,"
-            " a.ShortName AS act_short_name, s.SectionDescription"
+        # Both lookups used to be joins, and neither can be one on Catalyst:
+        # the section join needs a compound `ON ... AND ...` ("Only one join
+        # condition is allowed"), and both are keyed on TEXT columns, which a
+        # Catalyst foreign key cannot reference. Act and Section are small
+        # reference tables, so they are read whole and stitched here instead.
+        rows = self._store.query(
+            "SELECT asa.CaseMasterID, asa.ActID, asa.SectionID, asa.ActOrderID, asa.SectionOrderID"
             " FROM curated_ActSectionAssociation asa"
-            " LEFT JOIN curated_Act a ON a.ActCode = asa.ActID"
-            " LEFT JOIN curated_Section s ON s.ActCode = asa.ActID AND s.SectionCode = asa.SectionID"
             f" WHERE asa.CaseMasterID IN ({fragment})"
             " ORDER BY asa.CaseMasterID, asa.ActOrderID, asa.SectionOrderID",
             params,
         )
+        if not rows:
+            return []
+
+        acts = (
+            self._reference.acts() if self._reference is not None
+            else self._store.query("SELECT ActCode, ShortName FROM curated_Act")
+        )
+        act_names = {str(a["ActCode"]): a.get("ShortName") for a in acts if a.get("ActCode") is not None}
+        sections = self._store.query(
+            "SELECT ActCode, SectionCode, SectionDescription FROM curated_Section"
+        )
+        section_text = {
+            (str(s["ActCode"]), str(s["SectionCode"])): s.get("SectionDescription")
+            for s in sections
+            if s.get("ActCode") is not None and s.get("SectionCode") is not None
+        }
+
+        enriched: list[dict[str, Any]] = []
+        for row in rows:
+            act_id, section_id = row.get("ActID"), row.get("SectionID")
+            out = dict(row)
+            out["act_short_name"] = act_names.get(str(act_id)) if act_id is not None else None
+            out["SectionDescription"] = (
+                section_text.get((str(act_id), str(section_id)))
+                if act_id is not None and section_id is not None else None
+            )
+            enriched.append(out)
+        return enriched
 
     def arrests_for_cases(self, case_ids: Sequence[int]) -> list[dict[str, Any]]:
         if not case_ids:
