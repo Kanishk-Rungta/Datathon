@@ -107,12 +107,16 @@ Roles: `io.bengaluru` (station scope), `analyst.state`, `sp.mysuru`,
 
 ## 5. Status
 
-**All 30 Definition-of-Done items are implemented.** 316 tests (311 run
-locally; 5 live-Catalyst smoke tests skip without credentials).
+**All 30 Definition-of-Done items are implemented.** 339 tests (330 run
+locally; 9 live-Catalyst tests skip without credentials/opt-in).
 
 V2 progress against `implementationv2.md` is recorded in
-[docs/v2-progress.md](docs/v2-progress.md) — read it before starting V2 work,
-it says what is done, what is blocked, and on what.
+[docs/v2-progress.md](docs/v2-progress.md). Deployment-phase progress against
+`implementationv2-phases-0-2.md` (Phases 0–2: baseline, Catalyst runtime,
+Catalyst data plane) is recorded in `docs/deployment/phase0-baseline.md`,
+`phase1-catalyst-runtime.md`, and `phase2-data-plane.md` — read the relevant
+one before starting further deployment work; each states plainly what's
+verified versus what needs a live Catalyst project.
 
 | Area | State |
 |---|---|
@@ -129,8 +133,10 @@ it says what is done, what is blocked, and on what.
 | FastAPI, 39 endpoints, RFC 9457, correlation IDs | complete |
 | React console (chat, evidence, charts, graph, review queue) | complete |
 | Catalyst adapters (Data Store, Stratus, NoSQL, Cache, Identity) | complete, **not run against live Catalyst** |
+| Catalyst runtime (AppSail api service, event refresh function, packaging) | complete, **not deployed to a live project** |
+| Schema-capability port + provisioning manifest | complete, calibrated against live SQLite |
 | Agent evaluation corpus + harness | complete (Levels A/B; Level C needs a live provider) |
-| Tests: 316 (unit + integration + evals) | passing |
+| Tests: 339 (unit + integration + evals) | passing |
 | ADRs 0001–0006 | complete |
 
 ### Known limitations (stated, not hidden)
@@ -189,6 +195,23 @@ it says what is done, what is blocked, and on what.
   this was added. See `tests/unit/test_entity_resolution_calibration.py`.
 - `AnalyticsEngine.investigation_priority` takes keyword-only primitives;
   callers with a `CaseSummary` should use `priority_for_summary`.
+- **`cip_api` is an AppSail service, not a Function.** The original Advanced
+  I/O handler (`def handler(context, basicio): return app`) had no documented
+  ASGI bridge and could not have worked. See
+  `docs/deployment/catalyst-runtime.md`. `catalyst/appsail/api/server.py`
+  runs `uvicorn` directly; `get_app()` is still the only application factory.
+- **`catalyst/_bootstrap.py` resolves two different layouts on purpose.** It
+  checks for a `ksp_cip` sibling first (a staged artifact from
+  `scripts/build_catalyst_artifact.py`), then falls back to the repo-relative
+  `backend/ksp_cip` (running an entrypoint straight out of `catalyst/` during
+  development). Don't simplify this to one path — that's exactly the defect
+  P1-03 exists to catch.
+- **`DataStore.table_columns()` replaces raw `PRAGMA table_info(...)`** in
+  `loader.py`. Catalyst's implementation parses `schema.sql` + every
+  `migrations.py` entry (`infrastructure/db/schema_reflection.py`) — it
+  originally missed a migration-added column until a live-SQLite parity test
+  caught it. If you add a migration, `test_schema_reflection_parity.py` will
+  fail if the new column/table isn't reachable through this path.
 
 ---
 
