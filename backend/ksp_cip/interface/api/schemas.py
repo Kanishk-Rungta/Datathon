@@ -135,9 +135,26 @@ class HotspotRequest(BaseModel):
 
 class SociologyRequest(BaseModel):
     dimension: Literal["occupation", "age_band", "gender", "religion", "caste"] = "occupation"
+    subject: Literal["complainant", "victim"] = "complainant"
     district_ids: list[int] = Field(default_factory=list)
     date_from: date | None = None
     date_to: date | None = None
+
+
+class SeasonalityRequest(BaseModel):
+    district_ids: list[int] = Field(default_factory=list)
+    unit_ids: list[int] = Field(default_factory=list)
+    crime_sub_head_ids: list[int] = Field(default_factory=list)
+    date_from: date | None = None
+    date_to: date | None = None
+
+
+class EventComparisonRequest(BaseModel):
+    event_id: str | None = None
+    event_name: str | None = None
+    district_ids: list[int] = Field(default_factory=list)
+    crime_sub_head_ids: list[int] = Field(default_factory=list)
+    comparison_window_count: int = Field(default=4, ge=2, le=12)
 
 
 class GraphExpandRequest(BaseModel):

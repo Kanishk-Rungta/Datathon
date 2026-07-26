@@ -50,6 +50,14 @@ INTENT_RULES: list[tuple[Intent, float, list[str]]] = [
     (Intent.EARLY_WARNING, 1.0, [
         r"\b(early warning|alerts?|anomal\w+|spike|surge|unusual (rise|increase)|emerging)\b",
     ]),
+    # Placed ahead of TREND_QUERY so a tie in match weight resolves toward the
+    # more specific calendar-recurrence reading ("festival months", "seasonal
+    # pattern") rather than a generic month-over-month trend.
+    (Intent.SEASONAL_QUERY, 1.0, [
+        r"\b(seasonal(ity)?|season|festival (month|season|period)s?|"
+        r"same (month|period) (last|every|each) year|"
+        r"time of year|recurs? every year|monsoon season)\b",
+    ]),
     (Intent.TREND_QUERY, 1.0, [
         r"\b(trend|over time|month(ly)?|year on year|compared? (to|with) last|rising|falling|increase|decrease|pattern over)\b",
     ]),
@@ -88,6 +96,7 @@ _LIMIT_RE = re.compile(r"\b(?:top|first|latest|show me)\s+(\d{1,3})\b", re.IGNOR
 _NAMED_RE = re.compile(
     r"(?:named|name|accused|suspect|person|offender|about)\s+([A-Z][\w'.-]+(?:\s+[A-Z][\w'.-]+){0,3})"
 )
+_BY_NAME_RE = re.compile(r"\bby\s+([A-Z][\w'.-]+(?:\s+[A-Z][\w'.-]+){1,3})\b")
 _QUOTED_RE = re.compile(r"[\"'\u201c]([^\"'\u201d]{3,60})[\"'\u201d]")
 _SECTION_RE = re.compile(r"\b(?:section|u/s|under)\s*([0-9]{1,4}[A-Z]?)\b", re.IGNORECASE)
 _CASE_ID_RE = re.compile(r"\bcase(?:master)?\s*id\s*[:#]?\s*(\d{1,9})\b", re.IGNORECASE)
@@ -318,6 +327,13 @@ class NLUEngine:
         for match in _QUOTED_RE.finditer(text):
             names.append(match.group(1).strip())
         for match in _NAMED_RE.finditer(text):
+            candidate = match.group(1).strip()
+            if candidate.casefold() in _STOPWORD_NAMES:
+                continue
+            if candidate in slots.district_names or candidate in slots.unit_names:
+                continue
+            names.append(candidate)
+        for match in _BY_NAME_RE.finditer(text):
             candidate = match.group(1).strip()
             if candidate.casefold() in _STOPWORD_NAMES:
                 continue

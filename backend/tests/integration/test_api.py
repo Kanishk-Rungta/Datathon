@@ -154,6 +154,37 @@ class TestAnalyticsEndpoints:
                                json={"dimension": "caste"})
         assert response.status_code in (200, 403)
 
+    def test_seasonality_marks_months_without_enough_history(self, client, tokens):
+        payload = client.post("/api/v1/analytics/seasonality", headers=auth(tokens, "analyst"),
+                              json={}).json()
+        assert payload["trace"]["description"]
+        assert "not a forecast" in payload["caveat"]
+        for bucket in payload["buckets"]:
+            if bucket["insufficient_history"]:
+                assert bucket["deviation_percent"] is None
+                assert bucket["z_score"] is None
+
+    def test_only_approved_events_are_listed(self, client, tokens):
+        payload = client.get("/api/v1/analytics/events", headers=auth(tokens, "analyst")).json()
+        for event in payload["events"]:
+            assert event["approval_status"] == "approved"
+
+    def test_event_comparison_reports_coincidence_not_cause(self, client, tokens):
+        events = client.get("/api/v1/analytics/events",
+                            headers=auth(tokens, "analyst")).json()["events"]
+        if not events:
+            pytest.skip("no approved events seeded")
+        payload = client.post("/api/v1/analytics/event-comparison", headers=auth(tokens, "analyst"),
+                              json={"event_id": events[0]["event_id"]}).json()
+        assert payload["comparison_windows"]
+        assert "does not show" in payload["caveat"]
+        assert "caused" not in payload["trace"]["description"].replace("caused them", "")
+
+    def test_an_unapproved_event_name_is_a_404(self, client, tokens):
+        response = client.post("/api/v1/analytics/event-comparison", headers=auth(tokens, "analyst"),
+                               json={"event_name": "no such event"})
+        assert response.status_code == 404
+
 
 class TestGraphEndpoints:
     def test_expansion_reports_what_it_withheld(self, client, tokens):

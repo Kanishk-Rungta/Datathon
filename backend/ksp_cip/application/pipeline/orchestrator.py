@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import random
 from dataclasses import asdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from ...domain.enums import DQSeverity, Role
@@ -120,6 +120,7 @@ class SeedPipeline:
 
         refresh = self._refresher.refresh_all(transactions=transactions)
         created_users = self._seed_users(masters)
+        seeded_events = self._seed_events(anchor)
 
         summary = {
             "seed": self._seed,
@@ -135,6 +136,7 @@ class SeedPipeline:
             },
             "intelligence": refresh.as_dict(),
             "users": created_users,
+            "events": seeded_events,
             "manifest": asdict(manifest),
             "duration_seconds": round((datetime.now(timezone.utc) - started).total_seconds(), 2),
         }
@@ -185,6 +187,47 @@ class SeedPipeline:
             created.append({"username": username, "role": str(role), "created": True,
                             "home_unit_id": home_unit_id})
         return created
+
+    def _seed_events(self, anchor: date) -> int:
+        """Seed a small set of clearly-labelled synthetic reference events.
+
+        ``source`` and ``data_quality`` say plainly that these are synthetic;
+        ``approval_status`` records that they are cleared for use inside this
+        synthetic build. A real deployment replaces these rows through the
+        governed ingestion path and does not inherit them.
+        """
+        from ...infrastructure.db.repositories import EventCalendarRepository
+
+        events = EventCalendarRepository(self._store)
+        if events.count() > 0:
+            return 0
+
+        # Anchored to the seeded window so a comparison has data on both sides.
+        definitions = [
+            ("dasara", "Dasara", "festival", 300, 9),
+            ("deepavali", "Deepavali", "festival", 240, 4),
+            ("year-end", "Year-end public gathering", "gathering", 180, 2),
+        ]
+        created_at = self._clock.now().isoformat()
+        written = 0
+        for slug, name, event_type, days_before, duration in definitions:
+            start = anchor - timedelta(days=days_before)
+            events.upsert({
+                "event_id": f"synthetic-{slug}",
+                "event_name": name,
+                "event_type": event_type,
+                "date_from": start.isoformat(),
+                "date_to": (start + timedelta(days=duration)).isoformat(),
+                "district_id": None,
+                "unit_id": None,
+                "source": "synthetic-demo",
+                "data_quality": "synthetic",
+                "approval_status": "approved",
+                "created_at": created_at,
+            })
+            written += 1
+        LOGGER.info("event_calendar_seeded", extra={"events": written})
+        return written
 
     def _truncate(self) -> None:
         """Delete in strict child-before-parent order so foreign keys hold.

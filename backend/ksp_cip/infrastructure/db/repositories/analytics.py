@@ -26,6 +26,61 @@ class AggregateFilter:
     date_to: date | None = None
 
 
+class EventCalendarRepository:
+    """Reference events (festivals, large gatherings) for window comparison.
+
+    Two governance rules are enforced in the query, not in the caller:
+
+    * only rows with ``approval_status = 'approved'`` are ever returned, so an
+      unreviewed event cannot reach an answer;
+    * the table is CIP-derived reference data (``cip_`` prefix) and is never
+      joined into the organiser's FIR schema.
+    """
+
+    APPROVED = "approved"
+
+    def __init__(self, store: DataStore) -> None:
+        self._store = store
+
+    def upsert(self, event: dict[str, Any]) -> None:
+        self._store.execute(
+            "INSERT INTO cip_event_calendar (event_id, event_name, event_type, date_from, date_to,"
+            " district_id, unit_id, source, data_quality, approval_status, created_at)"
+            " VALUES (:event_id, :event_name, :event_type, :date_from, :date_to,"
+            " :district_id, :unit_id, :source, :data_quality, :approval_status, :created_at)"
+            " ON CONFLICT (event_id) DO UPDATE SET event_name = excluded.event_name,"
+            " event_type = excluded.event_type, date_from = excluded.date_from,"
+            " date_to = excluded.date_to, district_id = excluded.district_id,"
+            " unit_id = excluded.unit_id, source = excluded.source,"
+            " data_quality = excluded.data_quality, approval_status = excluded.approval_status",
+            event,
+        )
+
+    def approved_events(self, *, district_id: int | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"status": self.APPROVED, "limit": limit}
+        clause = ""
+        if district_id is not None:
+            clause = " AND (district_id IS NULL OR district_id = :district_id)"
+            params["district_id"] = district_id
+        return self._store.query(
+            "SELECT * FROM cip_event_calendar WHERE approval_status = :status"
+            + clause + " ORDER BY date_from DESC LIMIT :limit",
+            params,
+        )
+
+    def by_name(self, name: str) -> dict[str, Any] | None:
+        rows = self._store.query(
+            "SELECT * FROM cip_event_calendar WHERE approval_status = :status"
+            " AND LOWER(event_name) = :name LIMIT 1",
+            {"status": self.APPROVED, "name": name.casefold()},
+        )
+        return rows[0] if rows else None
+
+    def count(self) -> int:
+        rows = self._store.query("SELECT COUNT(*) AS n FROM cip_event_calendar")
+        return int(rows[0]["n"]) if rows else 0
+
+
 class AnalyticsRepository:
     def __init__(self, store: DataStore) -> None:
         self._store = store
@@ -209,6 +264,47 @@ class AnalyticsRepository:
             params,
         )
 
+    def victim_demographic_dimension(
+        self, filters: AggregateFilter, scope: UnitScope, *, dimension: str
+    ) -> list[dict[str, Any]]:
+        """Aggregate-only crosstab over ``curated_Victim``.
+
+        The organiser's Victim table carries only ``AgeYear``/``GenderID`` —
+        no occupation/religion/caste columns exist on it — so only those two
+        dimensions are offered here. This is a real schema limit, not an
+        oversight: adding those columns would mean redesigning the source
+        schema, which the project does not do.
+        """
+        dimension_sql = {
+            "gender": ("v.GenderID", ""),
+            "age_band": (
+                "CASE WHEN v.AgeYear IS NULL THEN 'unknown'"
+                " WHEN v.AgeYear < 18 THEN '0-17' WHEN v.AgeYear < 30 THEN '18-29'"
+                " WHEN v.AgeYear < 45 THEN '30-44' WHEN v.AgeYear < 60 THEN '45-59'"
+                " ELSE '60+' END",
+                "",
+            ),
+        }
+        if dimension not in dimension_sql:
+            from ....domain.errors import ValidationError
+
+            raise ValidationError(
+                "This dimension is not available for victim records; the source schema only carries "
+                "victim age and gender",
+                dimension=dimension,
+            )
+        expression, join = dimension_sql[dimension]
+        where, params = self._predicate(filters, scope)
+        return self._store.query(
+            f"SELECT {expression} AS dimension_value, sh.CrimeHeadName AS sub_head, COUNT(*) AS record_count"
+            + self._FROM
+            + " JOIN curated_Victim v ON v.CaseMasterID = c.CaseMasterID "
+            + join
+            + where
+            + " GROUP BY dimension_value, sub_head ORDER BY record_count DESC",
+            params,
+        )
+
     def total_cases(self, filters: AggregateFilter, scope: UnitScope) -> int:
         where, params = self._predicate(filters, scope)
         rows = self._store.query("SELECT COUNT(*) AS n" + self._FROM + where, params)
@@ -222,6 +318,17 @@ class AnalyticsRepository:
             + self._FROM + where + " ORDER BY c.CrimeRegisteredDate DESC LIMIT :limit",
             params,
         )
+
+    def counts_between(
+        self, filters: AggregateFilter, scope: UnitScope, *, date_from: date, date_to: date
+    ) -> int:
+        """Case count in an explicit window, reusing the caller's other filters."""
+        window = AggregateFilter(
+            unit_ids=filters.unit_ids, district_ids=filters.district_ids,
+            crime_sub_head_ids=filters.crime_sub_head_ids, crime_head_ids=filters.crime_head_ids,
+            date_from=date_from, date_to=date_to,
+        )
+        return self.total_cases(window, scope)
 
     def data_coverage(self) -> dict[str, Any]:
         rows = self._store.query(

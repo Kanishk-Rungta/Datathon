@@ -22,6 +22,15 @@ BASELINE_MONTHS = 12
 EARLY_WARNING_WINDOW_DAYS = 30
 PRIORITY_BANDS = ((70.0, "high"), (45.0, "medium"), (0.0, "routine"))
 OFFENDER_BANDS = ((70.0, "high"), (45.0, "medium"), (0.0, "low"))
+SEASONALITY_COMPARISON_YEARS = 3
+#: Below this many prior-year observations, a calendar bucket's deviation is
+#: not reported as a finding — it would be indistinguishable from noise.
+SEASONALITY_MIN_PRIOR_YEARS = 2
+SOCIOLOGY_SUPPRESSION_THRESHOLD = 10
+_MONTH_LABELS = {
+    1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June",
+    7: "July", 8: "August", 9: "September", 10: "October", 11: "November", 12: "December",
+}
 
 
 # ------------------------------------------------------------------ results
@@ -92,11 +101,59 @@ class EarlyWarningAlert:
 
 
 @dataclass(slots=True)
+class SeasonalBucket:
+    key: str
+    label: str
+    current_period: str | None
+    current_count: int
+    baseline_years: list[int]
+    baseline_mean: float
+    baseline_stddev: float
+    deviation_percent: float | None
+    z_score: float | None
+    insufficient_history: bool
+    case_ids: list[int]
+
+
+@dataclass(slots=True)
+class SeasonalityResult:
+    grouping: str
+    comparison_years: int
+    buckets: list[SeasonalBucket]
+    total_periods_considered: int
+    trace: ComputationTrace
+
+
+@dataclass(slots=True)
+class EventComparisonResult:
+    event_id: str
+    event_name: str
+    event_type: str
+    window_start: str
+    window_end: str
+    window_days: int
+    observed_count: int
+    comparison_windows: list[dict[str, Any]]
+    comparison_mean: float
+    comparison_stddev: float
+    difference_percent: float | None
+    z_score: float | None
+    sample_size: int
+    sufficient_evidence: bool
+    case_ids: list[int]
+    trace: ComputationTrace
+
+
+@dataclass(slots=True)
 class SociologyResult:
     dimension: str
+    subject: str
     rows: list[dict[str, Any]]
     total_records: int
     top_associations: list[dict[str, Any]]
+    suppressed_group_count: int
+    suppressed_record_count: int
+    suppression_threshold: int
     case_ids: list[int]
     trace: ComputationTrace
 
@@ -379,6 +436,194 @@ class AnalyticsEngine:
         alerts.sort(key=lambda a: a.z_score, reverse=True)
         return alerts[:max_alerts]
 
+    # -------------------------------------------------------- seasonality
+    def seasonality(
+        self,
+        filters: AggregateFilter,
+        scope: UnitScope,
+        *,
+        comparison_years: int = SEASONALITY_COMPARISON_YEARS,
+        grouping: str = "month",
+    ) -> SeasonalityResult:
+        """Compare each calendar month's most recent count against that same
+        month's history in prior years.
+
+        This is deliberately not the same computation as :meth:`trend`. Trend
+        asks "is the series rising"; this asks "is a given calendar period
+        running hot or cold relative to what *that period* has historically
+        looked like" (festival-month spikes, monsoon patterns). A bucket with
+        fewer than :data:`SEASONALITY_MIN_PRIOR_YEARS` distinct prior years is
+        marked ``insufficient_history`` rather than given a deviation figure,
+        because a one-year "baseline" is not a baseline.
+        """
+        if grouping != "month":
+            raise ValueError("Only calendar-month grouping is supported currently")
+
+        rows = self._analytics.monthly_counts(filters, scope)
+        counts_by_period = {str(row["period"]): int(row["case_count"]) for row in rows if row["period"]}
+        if not counts_by_period:
+            empty_trace = ComputationTrace(
+                operation="seasonality",
+                description="No registered cases matched the filter, so no calendar pattern could be compared.",
+                inputs=_filter_inputs(filters),
+                row_count=0,
+            )
+            return SeasonalityResult(
+                grouping=grouping, comparison_years=comparison_years, buckets=[],
+                total_periods_considered=0, trace=empty_trace,
+            )
+
+        by_month: dict[str, list[tuple[int, int]]] = {}
+        for period, count in counts_by_period.items():
+            year_s, month_s = period.split("-")[:2]
+            by_month.setdefault(month_s, []).append((int(year_s), count))
+
+        buckets: list[SeasonalBucket] = []
+        for month_key in sorted(by_month):
+            entries = sorted(by_month[month_key], key=lambda e: e[0])
+            latest_year = entries[-1][0]
+            current_count = sum(c for y, c in entries if y == latest_year)
+            prior_years = sorted({y for y, _ in entries if y != latest_year}, reverse=True)[:comparison_years]
+            history = [c for y, c in entries if y in prior_years]
+            insufficient = len(prior_years) < SEASONALITY_MIN_PRIOR_YEARS
+            baseline_mean = stats.mean([float(v) for v in history]) if history else 0.0
+            baseline_sigma = stats.sample_stddev([float(v) for v in history]) if history else 0.0
+            deviation = None if insufficient else _round_optional(stats.percent_change(current_count, baseline_mean))
+            z = None if insufficient else round(stats.z_score(float(current_count), [float(v) for v in history]), 3)
+
+            month_start = date(latest_year, int(month_key), 1)
+            month_end = _parse_period_end(f"{latest_year}-{month_key}") or month_start
+            month_filter = AggregateFilter(
+                unit_ids=filters.unit_ids, district_ids=filters.district_ids,
+                crime_sub_head_ids=filters.crime_sub_head_ids, crime_head_ids=filters.crime_head_ids,
+                date_from=month_start, date_to=month_end,
+            )
+            case_rows = self._analytics.case_ids_for(month_filter, scope, limit=100)
+
+            buckets.append(SeasonalBucket(
+                key=month_key,
+                label=_MONTH_LABELS[int(month_key)],
+                current_period=f"{latest_year}-{month_key}",
+                current_count=current_count,
+                baseline_years=prior_years,
+                baseline_mean=round(baseline_mean, 3),
+                baseline_stddev=round(baseline_sigma, 3),
+                deviation_percent=deviation,
+                z_score=z,
+                insufficient_history=insufficient,
+                case_ids=[int(r["case_master_id"]) for r in case_rows],
+            ))
+
+        trace = ComputationTrace(
+            operation="seasonality",
+            description=(
+                f"Grouped {sum(counts_by_period.values())} registered cases by calendar month across "
+                f"{len({y for month in by_month.values() for y, _ in month})} distinct year(s), then compared each "
+                f"month's most recent count to the mean of up to {comparison_years} prior year(s) of that same "
+                "calendar month."
+            ),
+            inputs={**_filter_inputs(filters), "comparison_years": comparison_years, "grouping": grouping},
+            row_count=sum(counts_by_period.values()),
+            formula="z = (current − mean(prior years of same month)) / max(stddev(prior years), 1.0)",
+        )
+        return SeasonalityResult(
+            grouping=grouping, comparison_years=comparison_years, buckets=buckets,
+            total_periods_considered=len(counts_by_period), trace=trace,
+        )
+
+    # ---------------------------------------------------- event comparison
+    def event_comparison(
+        self,
+        filters: AggregateFilter,
+        scope: UnitScope,
+        *,
+        event: dict[str, Any],
+        comparison_window_count: int = 4,
+    ) -> EventComparisonResult:
+        """Compare an event window against matched non-event windows.
+
+        The matching is deliberately simple and stated rather than clever: the
+        same number of days, immediately preceding the event window, repeated
+        ``comparison_window_count`` times and skipping the event window itself.
+        Equal-length adjacent windows control for the obvious confounders
+        (season, reporting practice) without pretending to be a causal design.
+
+        **This measures coincidence, never cause.** The result deliberately
+        carries no field a caller could read as causal, and the agent renders
+        it as "was elevated during", per implementationv2 §9.2.
+        """
+        window_start = date.fromisoformat(str(event["date_from"])[:10])
+        window_end = date.fromisoformat(str(event["date_to"])[:10])
+        window_days = max(1, (window_end - window_start).days + 1)
+
+        observed = self._analytics.counts_between(
+            filters, scope, date_from=window_start, date_to=window_end
+        )
+
+        comparison_windows: list[dict[str, Any]] = []
+        cursor_end = window_start - timedelta(days=1)
+        for _ in range(comparison_window_count):
+            cursor_start = cursor_end - timedelta(days=window_days - 1)
+            count = self._analytics.counts_between(
+                filters, scope, date_from=cursor_start, date_to=cursor_end
+            )
+            comparison_windows.append({
+                "start": cursor_start.isoformat(),
+                "end": cursor_end.isoformat(),
+                "count": count,
+            })
+            cursor_end = cursor_start - timedelta(days=1)
+
+        counts = [float(w["count"]) for w in comparison_windows]
+        comparison_mean = stats.mean(counts)
+        comparison_sigma = stats.sample_stddev(counts)
+        # With too few comparison windows, or none carrying any cases, a
+        # percentage difference would be arithmetic theatre.
+        sufficient = len(counts) >= 2 and sum(counts) > 0
+        difference = _round_optional(stats.percent_change(observed, comparison_mean)) if sufficient else None
+        z = round(stats.z_score(float(observed), counts), 3) if sufficient else None
+
+        window_filter = AggregateFilter(
+            unit_ids=filters.unit_ids, district_ids=filters.district_ids,
+            crime_sub_head_ids=filters.crime_sub_head_ids, crime_head_ids=filters.crime_head_ids,
+            date_from=window_start, date_to=window_end,
+        )
+        case_rows = self._analytics.case_ids_for(window_filter, scope, limit=100)
+
+        trace = ComputationTrace(
+            operation="event_comparison",
+            description=(
+                f"Counted cases in the {window_days}-day window of '{event.get('event_name')}' "
+                f"({window_start} to {window_end}) and compared them with {len(comparison_windows)} "
+                f"immediately preceding {window_days}-day window(s) under the same filters. "
+                "This measures whether counts were elevated during the window, not whether the "
+                "event caused them."
+            ),
+            inputs={**_filter_inputs(filters), "event_id": event.get("event_id"),
+                    "window_days": window_days, "comparison_windows": len(comparison_windows)},
+            row_count=observed,
+            formula="z = (observed − mean(matched windows)) / max(stddev(matched windows), 1.0)",
+            components=comparison_windows,
+        )
+        return EventComparisonResult(
+            event_id=str(event.get("event_id") or ""),
+            event_name=str(event.get("event_name") or "unnamed event"),
+            event_type=str(event.get("event_type") or "unspecified"),
+            window_start=window_start.isoformat(),
+            window_end=window_end.isoformat(),
+            window_days=window_days,
+            observed_count=observed,
+            comparison_windows=comparison_windows,
+            comparison_mean=round(comparison_mean, 3),
+            comparison_stddev=round(comparison_sigma, 3),
+            difference_percent=difference,
+            z_score=z,
+            sample_size=len(comparison_windows),
+            sufficient_evidence=sufficient,
+            case_ids=[int(r["case_master_id"]) for r in case_rows],
+            trace=trace,
+        )
+
     # --------------------------------------------------------- sociology
     def sociology(
         self,
@@ -386,16 +631,28 @@ class AnalyticsEngine:
         scope: UnitScope,
         *,
         dimension: str,
+        subject: str = "complainant",
         top_n: int = 10,
+        suppression_threshold: int = SOCIOLOGY_SUPPRESSION_THRESHOLD,
     ) -> SociologyResult:
-        rows = self._analytics.complainant_demographics(filters, scope, dimension=dimension)
+        if subject == "victim":
+            rows = self._analytics.victim_demographic_dimension(filters, scope, dimension=dimension)
+        else:
+            rows = self._analytics.complainant_demographics(filters, scope, dimension=dimension)
         total = sum(int(row["record_count"]) for row in rows)
         by_value: dict[str, int] = {}
         for row in rows:
             key = str(row.get("dimension_value") or "unknown")
             by_value[key] = by_value.get(key, 0) + int(row["record_count"])
+
+        # Small-cell suppression: a demographic group with very few records is
+        # not reported individually, so a rare (dimension value × district)
+        # combination cannot be used to re-identify a specific complainant.
+        visible = {k: v for k, v in by_value.items() if v >= suppression_threshold}
+        suppressed = {k: v for k, v in by_value.items() if v < suppression_threshold}
+
         associations: list[dict[str, Any]] = []
-        for value, count in stats.top_n([(k, float(v)) for k, v in by_value.items()], top_n):
+        for value, count in stats.top_n([(k, float(v)) for k, v in visible.items()], top_n):
             sub_heads = [
                 {"sub_head": row.get("sub_head") or "unclassified", "count": int(row["record_count"])}
                 for row in rows
@@ -408,24 +665,41 @@ class AnalyticsEngine:
                     "records": int(count),
                     "share_percent": round(stats.share(count, total), 2),
                     "top_crime_sub_heads": sub_heads[:3],
+                    "suppressed": False,
                 }
             )
+        suppressed_records = sum(suppressed.values())
+        if suppressed:
+            associations.append({
+                "value": f"{len(suppressed)} smaller group(s), each under {suppression_threshold} records",
+                "records": suppressed_records,
+                "share_percent": round(stats.share(suppressed_records, total), 2),
+                "top_crime_sub_heads": [],
+                "suppressed": True,
+            })
+
         case_rows = self._analytics.case_ids_for(filters, scope, limit=300)
         trace = ComputationTrace(
             operation="sociology",
             description=(
-                f"Cross-tabulated {total} complainant records by {dimension} against crime sub-head using "
-                "GROUP BY over curated_ComplainantDetails joined to curated_CaseMaster. Counts are of "
-                "recorded complaints, not of population."
+                f"Cross-tabulated {total} {subject} records by {dimension} against crime sub-head using "
+                f"GROUP BY over curated_{'Victim' if subject == 'victim' else 'ComplainantDetails'} joined to "
+                "curated_CaseMaster. Counts are of recorded records, not of population. Groups under "
+                f"{suppression_threshold} records are merged rather than shown individually."
             ),
-            inputs={**_filter_inputs(filters), "dimension": dimension},
+            inputs={**_filter_inputs(filters), "dimension": dimension, "subject": subject,
+                    "suppression_threshold": suppression_threshold},
             row_count=total,
         )
         return SociologyResult(
             dimension=dimension,
+            subject=subject,
             rows=rows,
             total_records=total,
             top_associations=associations,
+            suppressed_group_count=len(suppressed),
+            suppressed_record_count=suppressed_records,
+            suppression_threshold=suppression_threshold,
             case_ids=[int(r["case_master_id"]) for r in case_rows],
             trace=trace,
         )

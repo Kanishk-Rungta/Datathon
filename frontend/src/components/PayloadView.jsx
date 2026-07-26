@@ -59,7 +59,32 @@ function render(kind, data, onSelectNode) {
     }
     case 'bar': {
       const series = data.series?.[0]
-      return <BarChart labels={data.labels || []} values={series?.values || []} />
+      return (
+        <>
+          <BarChart labels={data.labels || []} values={series?.values || []} />
+          {data.seasonal_detail?.length > 0 && (
+            <table className="table" style={{ marginTop: 12 }}>
+              <thead><tr><th>Month</th><th>Latest</th><th>Baseline</th><th>Deviation</th></tr></thead>
+              <tbody>
+                {data.seasonal_detail.map((row) => (
+                  <tr key={row.month}>
+                    <td>{row.month} {row.current_period ? `(${row.current_period})` : ''}</td>
+                    <td className="num">{formatNumber(row.current_count)}</td>
+                    <td className="num">
+                      {row.insufficient_history ? 'insufficient history' : row.baseline_mean.toFixed(1)}
+                    </td>
+                    <td className="num">
+                      {row.insufficient_history || row.deviation_percent == null
+                        ? '—'
+                        : `${row.deviation_percent >= 0 ? '+' : ''}${row.deviation_percent.toFixed(1)}%`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )
     }
     case 'map':
       return <Cells cells={data.cells || []} gridMetres={data.grid_metres} />

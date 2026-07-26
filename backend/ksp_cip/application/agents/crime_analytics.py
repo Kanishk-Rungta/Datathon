@@ -27,6 +27,11 @@ from ..services.evidence import aggregate_evidence, alert_evidence, claim, empty
 from .base import AgentRequest, BaseAgent
 
 SOCIOLOGY_DIMENSIONS = ("occupation", "age_band", "gender", "religion", "caste")
+#: The organiser's Victim table has no occupation/religion/caste columns —
+#: a subject-selector request for those against victims is honestly
+#: substituted, not silently dropped or rejected.
+VICTIM_DIMENSIONS = ("gender", "age_band")
+SEASONAL_LOOKBACK_MONTHS = 48
 
 
 class CrimeAnalyticsAgent(BaseAgent):
@@ -59,6 +64,8 @@ class CrimeAnalyticsAgent(BaseAgent):
             return self._early_warning(request)
         if request.intent is Intent.DEMOGRAPHIC_INSIGHT:
             return self._sociology(request)
+        if request.intent is Intent.SEASONAL_QUERY:
+            return self._seasonal(request)
         return self._trend(request)
 
     # -------------------------------------------------------------- trends
@@ -218,6 +225,117 @@ class CrimeAnalyticsAgent(BaseAgent):
             data={"case_master_ids": [cid for cell in result.cells for cid in cell.case_ids][:200]},
         )
 
+    # -------------------------------------------------------- seasonality
+    def _seasonal(self, request: AgentRequest) -> AgentResult:
+        start, end = default_date_window(request.slots, today=request.today, months=SEASONAL_LOOKBACK_MONTHS)
+        filters = AggregateFilter(
+            unit_ids=request.slots.unit_ids or None,
+            district_ids=request.slots.district_ids or None,
+            crime_sub_head_ids=request.slots.crime_sub_head_ids or None,
+            date_from=start,
+            date_to=end,
+        )
+        result = self._engine.seasonality(filters, request.scope)
+        scope_label = self._scope_label(request)
+
+        if not result.buckets:
+            nothing = empty_result_evidence(
+                key=f"seasonality:none:{start}:{end}",
+                label=f"No registered cases between {start} and {end} to compare by calendar month",
+                detail={"window": [str(start), str(end)]},
+            )
+            return AgentResult(
+                agent=self.name, intent=request.intent,
+                summary_claims=[claim(
+                    "No registered cases fall inside that filter, so there is no calendar pattern to compare.",
+                    [nothing], provenance=Provenance.DETERMINISTIC_COMPUTATION,
+                )],
+                evidence=[nothing], traces=[result.trace], confidence=0.85,
+            )
+
+        reportable = [b for b in result.buckets if not b.insufficient_history]
+        if not reportable:
+            nothing = empty_result_evidence(
+                key=f"seasonality:insufficient:{start}:{end}",
+                label=f"Fewer than 2 prior years of history for every calendar month {scope_label}",
+                detail={"window": [str(start), str(end)], "months_seen": result.total_periods_considered},
+            )
+            return AgentResult(
+                agent=self.name, intent=request.intent,
+                summary_claims=[claim(
+                    f"The available history ({start} to {end}) does not yet cover enough separate years for any "
+                    "calendar month to have a reliable seasonal baseline, so no seasonal finding is reported.",
+                    [nothing], provenance=Provenance.DETERMINISTIC_COMPUTATION,
+                )],
+                evidence=[nothing], traces=[result.trace], confidence=0.85,
+            )
+
+        evidence_items = []
+        claims = [claim(
+            f"{len(reportable)} of {len(result.buckets)} calendar month(s) {scope_label} have enough history "
+            "(at least 2 prior years) to compare against a seasonal baseline.",
+            provenance=Provenance.DETERMINISTIC_COMPUTATION,
+        )]
+        ranked = sorted(reportable, key=lambda b: abs(b.z_score or 0.0), reverse=True)
+        for bucket in ranked[:5]:
+            item = aggregate_evidence(
+                key=f"seasonality:{bucket.key}:{bucket.current_period}",
+                label=f"{bucket.label} {bucket.current_period}: {bucket.current_count} case(s)",
+                case_master_ids=bucket.case_ids,
+                detail={"baseline_mean": bucket.baseline_mean, "baseline_years": bucket.baseline_years,
+                        "z_score": bucket.z_score, "deviation_percent": bucket.deviation_percent},
+            )
+            evidence_items.append(item)
+            if bucket.deviation_percent is None:
+                change_text = f"against a baseline of {bucket.baseline_mean:.1f} in prior year(s)"
+            else:
+                direction = "above" if bucket.deviation_percent >= 0 else "below"
+                change_text = f"{abs(bucket.deviation_percent):.1f}% {direction} its baseline of {bucket.baseline_mean:.1f}"
+            claims.append(claim(
+                f"{bucket.label} {bucket.current_period}: {bucket.current_count} case(s), {change_text} "
+                f"(mean of {bucket.label} in {', '.join(map(str, bucket.baseline_years))}).",
+                [item], provenance=Provenance.DETERMINISTIC_COMPUTATION,
+            ))
+        if evidence_items:
+            claims[0].evidence_locators = [evidence_items[0].locator]
+        insufficient_months = [b.label for b in result.buckets if b.insufficient_history]
+        if insufficient_months:
+            claims.append(claim(
+                f"{', '.join(insufficient_months)} do not yet have enough prior-year history and are excluded "
+                "from this comparison."
+            ))
+        claims.append(claim(
+            "These compare recorded FIR counts for a specific calendar month against that same month in prior "
+            "years. This is a historical comparison, not a forecast of what will happen next time that month "
+            "occurs."
+        ))
+
+        return AgentResult(
+            agent=self.name, intent=request.intent, summary_claims=claims, evidence=evidence_items,
+            traces=[result.trace],
+            payload=StructuredPayload(
+                payload_type="bar",
+                title=f"Calendar-month pattern — {scope_label}",
+                data={
+                    "labels": [b.label for b in result.buckets],
+                    "series": [{"name": "Most recent year", "values": [b.current_count for b in result.buckets]}],
+                    "seasonal_detail": [
+                        {
+                            "month": b.label,
+                            "current_period": b.current_period,
+                            "current_count": b.current_count,
+                            "baseline_mean": b.baseline_mean,
+                            "deviation_percent": b.deviation_percent,
+                            "z_score": b.z_score,
+                            "insufficient_history": b.insufficient_history,
+                        }
+                        for b in result.buckets
+                    ],
+                },
+            ),
+            data={"case_master_ids": [cid for b in reportable for cid in b.case_ids][:200]},
+        )
+
     # -------------------------------------------------------- early warning
     def _early_warning(self, request: AgentRequest) -> AgentResult:
         stored = self._alerts.alerts(district_ids=request.slots.district_ids or None, limit=10)
@@ -314,8 +432,18 @@ class CrimeAnalyticsAgent(BaseAgent):
 
     # ---------------------------------------------------------- sociology
     def _sociology(self, request: AgentRequest) -> AgentResult:
+        subject = str(request.options.get("subject") or self._infer_subject(request.text_english))
         dimension = str(request.options.get("dimension") or self._infer_dimension(request.text_english))
         self._authorization.assert_aggregate_only_dimension(request.principal, dimension)
+
+        substitution_note = None
+        if subject == "victim" and dimension not in VICTIM_DIMENSIONS:
+            substitution_note = (
+                f"The victim record carries only age and gender, not {dimension.replace('_', ' ')} — showing "
+                "gender instead."
+            )
+            dimension = "gender"
+
         start, end = default_date_window(request.slots, today=request.today, months=24)
         filters = AggregateFilter(
             unit_ids=request.slots.unit_ids or None,
@@ -323,26 +451,42 @@ class CrimeAnalyticsAgent(BaseAgent):
             crime_sub_head_ids=request.slots.crime_sub_head_ids or None,
             date_from=start, date_to=end,
         )
-        result = self._engine.sociology(filters, request.scope, dimension=dimension)
+        result = self._engine.sociology(filters, request.scope, dimension=dimension, subject=subject)
         if result.total_records == 0:
             return AgentResult(
                 agent=self.name, intent=request.intent,
-                summary_claims=[claim("No complainant records fall inside that filter.")],
+                summary_claims=[claim(f"No {subject} records fall inside that filter.")],
                 traces=[result.trace], confidence=0.85,
             )
 
         evidence = aggregate_evidence(
-            key=f"sociology:{dimension}:{start}:{end}",
-            label=f"{result.total_records} complainant records grouped by {dimension}",
+            key=f"sociology:{subject}:{dimension}:{start}:{end}",
+            label=f"{result.total_records} {subject} records grouped by {dimension}",
             case_master_ids=result.case_ids,
-            detail={"dimension": dimension, "window": [str(start), str(end)]},
+            detail={"dimension": dimension, "subject": subject, "window": [str(start), str(end)],
+                    "suppression_threshold": result.suppression_threshold},
         )
-        claims = [claim(
-            f"{result.total_records} complainant record(s) between {start} and {end} break down by "
+        claims = []
+        if substitution_note:
+            claims.append(claim(substitution_note))
+        claims.append(claim(
+            f"{result.total_records} {subject} record(s) between {start} and {end} break down by "
             f"{dimension.replace('_', ' ')} as follows.",
             [evidence], provenance=Provenance.DETERMINISTIC_COMPUTATION,
-        )]
-        for row in result.top_associations[:5]:
+        ))
+        shown = list(result.top_associations[:5])
+        suppressed_entry = next((row for row in result.top_associations if row.get("suppressed")), None)
+        if suppressed_entry and suppressed_entry not in shown:
+            shown.append(suppressed_entry)
+        for row in shown:
+            if row.get("suppressed"):
+                claims.append(claim(
+                    f"{row['value']}: {row['records']} record(s) combined, {row['share_percent']:.1f}% of the "
+                    "total — shown as a merged group rather than individually so a small group cannot be "
+                    "re-identified.",
+                    [evidence], provenance=Provenance.DETERMINISTIC_COMPUTATION,
+                ))
+                continue
             top_type = row["top_crime_sub_heads"][0]["sub_head"] if row["top_crime_sub_heads"] else "unclassified"
             claims.append(claim(
                 f"{row['value']}: {row['records']} record(s), {row['share_percent']:.1f}% of the total; "
@@ -350,7 +494,7 @@ class CrimeAnalyticsAgent(BaseAgent):
                 [evidence], provenance=Provenance.DETERMINISTIC_COMPUTATION,
             ))
         claims.append(claim(
-            "These are counts of recorded complaints, not rates against population. Differences in reporting "
+            f"These are counts of recorded {subject}s, not rates against population. Differences in reporting "
             "propensity, policing intensity and base rates all affect them, so association here is not causation "
             "and must not be read as a statement about any community."
         ))
@@ -360,14 +504,21 @@ class CrimeAnalyticsAgent(BaseAgent):
             traces=[result.trace],
             payload=StructuredPayload(
                 payload_type="bar",
-                title=f"Complainant records by {dimension.replace('_', ' ')}",
+                title=f"{subject.capitalize()} records by {dimension.replace('_', ' ')}",
                 data={
                     "labels": [row["value"] for row in result.top_associations],
                     "series": [{"name": "Records", "values": [row["records"] for row in result.top_associations]}],
                 },
             ),
-            data={"dimension": dimension, "case_master_ids": result.case_ids[:200]},
+            data={"dimension": dimension, "subject": subject, "case_master_ids": result.case_ids[:200]},
         )
+
+    @staticmethod
+    def _infer_subject(text: str) -> str:
+        lowered = text.casefold()
+        if "victim" in lowered:
+            return "victim"
+        return "complainant"
 
     @staticmethod
     def _infer_dimension(text: str) -> str:

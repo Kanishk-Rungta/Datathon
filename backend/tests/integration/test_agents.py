@@ -20,6 +20,7 @@ class TestRoutingEndToEnd:
     @pytest.mark.parametrize("text,intent,agent", [
         ("Show me theft cases in Mysuru", Intent.LOOKUP_LOCATION, AgentName.DATA_RETRIEVAL),
         ("What is the crime trend this year?", Intent.TREND_QUERY, AgentName.CRIME_ANALYTICS),
+        ("Is there a seasonal pattern to crime here?", Intent.SEASONAL_QUERY, AgentName.CRIME_ANALYTICS),
         ("Where are the hotspots?", Intent.HOTSPOT_QUERY, AgentName.CRIME_ANALYTICS),
         ("Any early warning alerts?", Intent.EARLY_WARNING, AgentName.CRIME_ANALYTICS),
         ("Who are the repeat offenders?", Intent.OFFENDER_PROFILE, AgentName.NETWORK_INTELLIGENCE),
@@ -150,3 +151,41 @@ class TestInvestigationSupport:
             items = priority["components"]["items"]
             assert items
             assert all("rationale" in item for item in items)
+
+
+class TestSeasonalAnalysis:
+    def test_seasonal_query_is_evidence_bound(self, container, analyst):
+        """Whichever branch fires (enough history or honestly not enough),
+        every numeric claim must still carry a locator (Gate 5, §9.1)."""
+        answer = ask(container, analyst, "Is there a seasonal pattern to crime in Karnataka?")
+        assert answer.intent is Intent.SEASONAL_QUERY
+        assert AgentName.CRIME_ANALYTICS in answer.agents_used
+        assert answer.traces
+        for claim in answer.claims:
+            if any(character.isdigit() for character in claim.text):
+                assert claim.evidence_locators, f"unevidenced numeric claim: {claim.text}"
+
+    def test_seasonal_query_disclaims_forecasting(self, container, analyst):
+        """It compares history, and must say so plainly rather than imply a
+        prediction of what a future occurrence of that month will look like."""
+        answer = ask(container, analyst, "What is the seasonal trend for theft?")
+        assert answer.intent is Intent.SEASONAL_QUERY
+        assert "not a forecast" in answer.answer_text.lower()
+
+
+class TestSociologySubjectSelector:
+    def test_victim_subject_with_unsupported_dimension_is_substituted_not_dropped(self, container, analyst):
+        """The organiser's Victim table has no occupation column. The agent
+        must say so and substitute gender, rather than silently ignoring the
+        "victim" framing or raising an error (Gate 5, §9.3)."""
+        answer = ask(container, analyst, "Break down victims by occupation")
+        assert answer.intent is Intent.DEMOGRAPHIC_INSIGHT
+        text = answer.answer_text.lower()
+        assert "victim" in text
+        assert "gender instead" in text
+
+    def test_victim_subject_with_a_supported_dimension_needs_no_substitution(self, container, analyst):
+        answer = ask(container, analyst, "Give me a gender breakdown of victims")
+        assert answer.intent is Intent.DEMOGRAPHIC_INSIGHT
+        assert "gender instead" not in answer.answer_text.lower()
+        assert "victim" in answer.answer_text.lower()

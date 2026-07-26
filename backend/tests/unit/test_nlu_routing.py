@@ -67,6 +67,8 @@ class TestAgentRoster:
 class TestIntentClassification:
     @pytest.mark.parametrize("text,expected", [
         ("Show me the crime trend over the last year", Intent.TREND_QUERY),
+        ("Is there a seasonal pattern to chain snatching?", Intent.SEASONAL_QUERY),
+        ("Does theft go up every festival season?", Intent.SEASONAL_QUERY),
         ("Where are the hotspots right now?", Intent.HOTSPOT_QUERY),
         ("Any early warning alerts?", Intent.EARLY_WARNING),
         ("Who are the repeat offenders?", Intent.OFFENDER_PROFILE),
@@ -130,3 +132,10 @@ class TestSlotExtraction:
 
     def test_quoted_person_name_is_extracted(self, engine):
         assert "Ramesh Gowda" in engine.extract_slots('cases against "Ramesh Gowda"').person_names
+
+    def test_person_name_after_by_is_extracted(self, engine):
+        slots = engine.extract_slots("tell me the offence done by P.Harish Lobo")
+        assert "P.Harish Lobo" in slots.person_names
+
+    def test_by_name_query_routes_to_lookup_person(self, engine):
+        assert engine.classify("tell me the offence done by P.Harish Lobo").intent is Intent.LOOKUP_PERSON
