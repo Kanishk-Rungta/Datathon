@@ -522,14 +522,20 @@
           "type": "INTEGER",
           "primary_key": false,
           "not_null": true,
-          "references": null
+          "references": {
+            "table": "curated_Accused",
+            "column": "AccusedMasterID"
+          }
         },
         {
           "name": "right_accused_id",
           "type": "INTEGER",
           "primary_key": false,
           "not_null": true,
-          "references": null
+          "references": {
+            "table": "curated_Accused",
+            "column": "AccusedMasterID"
+          }
         },
         {
           "name": "score",

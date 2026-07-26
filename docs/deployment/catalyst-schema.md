@@ -152,9 +152,9 @@ Zoho's own documentation, and the CLI's own source):**
   the relationship the organiser's ER diagram specifies — makes
   `ON d.DistrictID = u.DistrictID` work against real data, with no change to
   the schema, the identity model, or any query.
-  `scripts/provision_catalyst_datastore.js --foreign-keys` provisions all 39
-  this way. Required payload fields: `parent_table`, `parent_column` and
-  `constraint_type`.
+  `scripts/provision_catalyst_datastore.js --foreign-keys` provisions them
+  this way — 40 of the 41 the manifest declares. Required payload fields:
+  `parent_table`, `parent_column` and `constraint_type`.
 
   Three constraints worth knowing:
 
