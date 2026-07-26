@@ -107,6 +107,10 @@ class SQLiteDataStore:
         with self._write_lock:
             self.connection.executescript(script)
 
+    def table_columns(self, table: str) -> list[str]:
+        rows = self.query(f'PRAGMA table_info("{table}")')
+        return [str(row["name"]) for row in rows]
+
     @contextmanager
     def transaction(self) -> Iterator["SQLiteDataStore"]:
         with self._write_lock:

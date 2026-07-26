@@ -50,8 +50,48 @@ INTENT_RULES: list[tuple[Intent, float, list[str]]] = [
     (Intent.EARLY_WARNING, 1.0, [
         r"\b(early warning|alerts?|anomal\w+|spike|surge|unusual (rise|increase)|emerging)\b",
     ]),
+    # Weighted above both HOTSPOT_QUERY (which describes *observed*
+    # concentration) and FORECAST_QUERY (which projects counts over time).
+    # "Where will crime concentrate next month" is a spatial question about the
+    # future, and answering it with either today's hotspots or a statewide count
+    # would answer a question nobody asked. Every pattern needs a forward-looking
+    # word *and* a spatial one, so "where are the hotspots" stays with HOTSPOT.
+    (Intent.SPATIOTEMPORAL_QUERY, 1.1, [
+        r"\b(?:predicted|projected|forecast(?:ed)?|future|emerging|likely|expected)\s+"
+        r"(?:crime\s+)?(?:hotspots?|hot spots?|clusters?|areas?|locations?|zones?)\b"
+        r"|\bwhere\s+(?:will|would|is|are)\s+(?:crime|theft|cases?|incidents?|it)\s+"
+        r"(?:be\s+)?(?:likely\s+)?(?:to\s+)?(?:concentrate|cluster|rise|increase|happen|occur|spike)\b"
+        r"|\b(?:hotspots?|clusters?)\s+(?:for|in|over)\s+the\s+(?:next|coming)\b"
+        r"|\bwhich\s+(?:areas?|locations?|zones?|grid cells?)\s+.{0,30}?(?:next|coming|future|likely)\b"
+        r"|\bspatio[- ]?temporal\b|\bspatial (?:forecast|projection|risk)\b",
+    ]),
+    # Ahead of both SEASONAL_QUERY and TREND_QUERY: "what will next month look
+    # like" is a question about the future, and answering it with a description
+    # of the past would quietly substitute a different question. Weighted 1.05
+    # so an explicitly forward-looking phrase wins a tie against them.
+    (Intent.FORECAST_QUERY, 1.05, [
+        r"\b(forecast|project(ion|ed)?|predict(ion|ed)?|"
+        r"expect(ed)? (next|in the (coming|next))|"
+        r"how many .{0,60}(next|coming) (month|quarter|year)|"
+        r"(next|coming) (month|quarter|few months).{0,30}(expect|likely|estimate)|"
+        r"what will .{0,40}(look like|happen)|"
+        r"anticipat\w+|plan(ning)? ahead|resource(s)? (for|next))\b",
+    ]),
+    # Placed ahead of TREND_QUERY so a tie in match weight resolves toward the
+    # more specific calendar-recurrence reading ("festival months", "seasonal
+    # pattern") rather than a generic month-over-month trend.
+    (Intent.SEASONAL_QUERY, 1.0, [
+        r"\b(seasonal(ity)?|season|festival (month|season|period)s?|"
+        r"same (month|period) (last|every|each) year|"
+        r"time of year|recurs? every year|monsoon season)\b",
+    ]),
     (Intent.TREND_QUERY, 1.0, [
         r"\b(trend|over time|month(ly)?|year on year|compared? (to|with) last|rising|falling|increase|decrease|pattern over)\b",
+    ]),
+    (Intent.SOCIOECONOMIC_QUERY, 1.05, [
+        r"\b(socio[- ]?economic correlation|socio[- ]?economic factor|correlation with (literacy|poverty|unemployment|urbanization|income)|"
+        r"literacy (vs|correlation)|unemployment (vs|correlation)|poverty (vs|correlation|impact)|"
+        r"poverty headcount|urbanization (vs|correlation)|migrant population|per capita income)\b",
     ]),
     (Intent.DEMOGRAPHIC_INSIGHT, 1.0, [
         r"\b(demograph\w+|age group|occupation|socio[- ]?economic|gender breakdown|who (are|is) (the )?(victims?|complainants?))\b",
@@ -88,6 +128,7 @@ _LIMIT_RE = re.compile(r"\b(?:top|first|latest|show me)\s+(\d{1,3})\b", re.IGNOR
 _NAMED_RE = re.compile(
     r"(?:named|name|accused|suspect|person|offender|about)\s+([A-Z][\w'.-]+(?:\s+[A-Z][\w'.-]+){0,3})"
 )
+_BY_NAME_RE = re.compile(r"\bby\s+([A-Z][\w'.-]+(?:\s+[A-Z][\w'.-]+){1,3})\b")
 _QUOTED_RE = re.compile(r"[\"'\u201c]([^\"'\u201d]{3,60})[\"'\u201d]")
 _SECTION_RE = re.compile(r"\b(?:section|u/s|under)\s*([0-9]{1,4}[A-Z]?)\b", re.IGNORECASE)
 _CASE_ID_RE = re.compile(r"\bcase(?:master)?\s*id\s*[:#]?\s*(\d{1,9})\b", re.IGNORECASE)
@@ -318,6 +359,13 @@ class NLUEngine:
         for match in _QUOTED_RE.finditer(text):
             names.append(match.group(1).strip())
         for match in _NAMED_RE.finditer(text):
+            candidate = match.group(1).strip()
+            if candidate.casefold() in _STOPWORD_NAMES:
+                continue
+            if candidate in slots.district_names or candidate in slots.unit_names:
+                continue
+            names.append(candidate)
+        for match in _BY_NAME_RE.finditer(text):
             candidate = match.group(1).strip()
             if candidate.casefold() in _STOPWORD_NAMES:
                 continue

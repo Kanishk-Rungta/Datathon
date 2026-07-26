@@ -44,6 +44,27 @@ class UserRepository:
         )
         return rows[0] if rows else None
 
+    def by_external_subject(self, subject: str) -> dict[str, Any] | None:
+        """Look up by the identity provider's stable subject claim.
+
+        Used by the Catalyst identity backend; the local demo login does not
+        set this column, so it returns ``None`` in a zero-credential build.
+        """
+        if not subject:
+            return None
+        rows = self._store.query(
+            "SELECT * FROM cip_user_account WHERE external_subject = :s AND active = 1",
+            {"s": subject},
+        )
+        return rows[0] if rows else None
+
+    def link_external_subject(self, user_id: str, subject: str) -> None:
+        """Bind a local account to an identity-provider subject."""
+        self._store.execute(
+            "UPDATE cip_user_account SET external_subject = :s WHERE user_id = :i",
+            {"s": subject, "i": user_id},
+        )
+
     def list_all(self) -> list[dict[str, Any]]:
         return self._store.query(
             "SELECT user_id, username, display_name, role, home_unit_id, district_id, active"

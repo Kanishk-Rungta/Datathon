@@ -160,3 +160,37 @@ class TestFinancialExtension:
         assert financial == {"ext_financial_transaction"}, (
             "financial data must live only in the clearly marked extension table"
         )
+
+    def test_the_planted_burst_is_recovered(self, container, manifest):
+        """The validation loop, extended to the financial analysis.
+
+        The generator plants one account with a spike of transfers on a known
+        day, against a deliberately quiet run-up. If the burst analysis cannot
+        find it, the analysis proves nothing over synthetic data — the same
+        reason the surge, the hotspots and the ring are planted and asserted.
+        """
+        from ksp_cip.application.graph.financial import FinancialAnalyzer
+
+        planted = manifest["financial_burst"]
+        assert planted, "the generator must record what it planted"
+
+        bursts = FinancialAnalyzer().temporal_bursts(container.financial.all_transactions())
+        matched = [b for b in bursts if b.ref == planted["ref"] and b.day == planted["day"]]
+        assert matched, (
+            f"planted burst {planted['ref']} on {planted['day']} was not detected; "
+            f"found instead: {[(b.ref, b.day) for b in bursts]}"
+        )
+        found = matched[0]
+        assert found.txn_count == planted["txn_count"]
+        assert found.z_score >= 2.5
+        # The account's own quiet history is what makes the day stand out.
+        assert found.baseline_mean < 1.0
+
+    def test_ordinary_activity_does_not_register_as_a_burst(self, container, manifest):
+        """Precision matters as much as recall: the planted day should be the only one."""
+        from ksp_cip.application.graph.financial import FinancialAnalyzer
+
+        planted = manifest["financial_burst"]
+        bursts = FinancialAnalyzer().temporal_bursts(container.financial.all_transactions())
+        spurious = [b for b in bursts if not (b.ref == planted["ref"] and b.day == planted["day"])]
+        assert not spurious, f"unplanted bursts reported: {[(b.ref, b.day, b.z_score) for b in spurious]}"

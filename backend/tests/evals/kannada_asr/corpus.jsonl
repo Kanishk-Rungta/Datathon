@@ -1,0 +1,25 @@
+{"id": "kn-crime-001", "reference": "ಮೈಸೂರು ಜಿಲ್ಲೆಯಲ್ಲಿ ಕಳ್ಳತನ ಪ್ರಕರಣಗಳು", "gloss": "theft cases in Mysuru district", "critical_terms": ["ಮೈಸೂರು", "ಕಳ್ಳತನ"], "tags": ["crime_term", "district"]}
+{"id": "kn-crime-002", "reference": "ಬೆಂಗಳೂರು ನಗರದಲ್ಲಿ ಸರಗಳ್ಳತನ ಹೆಚ್ಚಾಗಿದೆಯೇ", "gloss": "has chain snatching increased in Bengaluru City", "critical_terms": ["ಬೆಂಗಳೂರು ನಗರ", "ಸರಗಳ್ಳತನ"], "tags": ["crime_term", "district"]}
+{"id": "kn-crime-003", "reference": "ಕೊಲೆ ಪ್ರಕರಣದ ಆರೋಪಿ ಯಾರು", "gloss": "who is the accused in the murder case", "critical_terms": ["ಕೊಲೆ", "ಆರೋಪಿ"], "tags": ["crime_term", "domain_term"]}
+{"id": "kn-crime-004", "reference": "ದರೋಡೆ ಮತ್ತು ಮನೆ ಕಳ್ಳತನ ಪ್ರಕರಣಗಳ ಸಂಖ್ಯೆ", "gloss": "number of robbery and house burglary cases", "critical_terms": ["ದರೋಡೆ", "ಮನೆ ಕಳ್ಳತನ"], "tags": ["crime_term"]}
+{"id": "kn-crime-005", "reference": "ವಂಚನೆ ಪ್ರಕರಣಗಳ ತನಿಖೆ ಸ್ಥಿತಿ", "gloss": "investigation status of fraud cases", "critical_terms": ["ವಂಚನೆ", "ತನಿಖೆ"], "tags": ["crime_term", "domain_term"]}
+{"id": "kn-legal-001", "reference": "ಎಫ್ ಐ ಆರ್ ಸಂಖ್ಯೆ ಒಂದು ನಾಲ್ಕು ನಾಲ್ಕು ಮೂರು", "gloss": "FIR number one four four three", "critical_terms": ["ಎಫ್ ಐ ಆರ್"], "tags": ["legal_term", "numeral"]}
+{"id": "kn-legal-002", "reference": "ದೋಷಾರೋಪಣ ಪಟ್ಟಿ ಸಲ್ಲಿಸಲಾಗಿದೆಯೇ", "gloss": "has the chargesheet been filed", "critical_terms": ["ದೋಷಾರೋಪಣ ಪಟ್ಟಿ"], "tags": ["legal_term"]}
+{"id": "kn-legal-003", "reference": "ಬಂಧನ ಮತ್ತು ಶರಣಾಗತಿ ವಿವರಗಳು", "gloss": "arrest and surrender details", "critical_terms": ["ಬಂಧನ", "ಶರಣಾಗತಿ"], "tags": ["legal_term"]}
+{"id": "kn-legal-004", "reference": "ಠಾಣೆಯ ತನಿಖಾಧಿಕಾರಿ ಹೆಸರು", "gloss": "name of the station investigating officer", "critical_terms": ["ಠಾಣೆ", "ತನಿಖಾಧಿಕಾರಿ"], "tags": ["legal_term", "domain_term"]}
+{"id": "kn-legal-005", "reference": "ಸಂತ್ರಸ್ತರ ಮತ್ತು ದೂರುದಾರರ ಮಾಹಿತಿ", "gloss": "victim and complainant information", "critical_terms": ["ಸಂತ್ರಸ್ತ", "ದೂರುದಾರ"], "tags": ["legal_term"]}
+{"id": "kn-place-001", "reference": "ಬೆಳಗಾವಿ ಮತ್ತು ಕಲಬುರಗಿ ಜಿಲ್ಲೆಗಳು", "gloss": "Belagavi and Kalaburagi districts", "critical_terms": ["ಬೆಳಗಾವಿ", "ಕಲಬುರಗಿ"], "tags": ["district"]}
+{"id": "kn-place-002", "reference": "ಶಿವಮೊಗ್ಗ ಜಿಲ್ಲೆಯ ಅಪರಾಧ ಪ್ರವೃತ್ತಿ", "gloss": "crime trend in Shivamogga district", "critical_terms": ["ಶಿವಮೊಗ್ಗ", "ಅಪರಾಧ"], "tags": ["district", "domain_term"]}
+{"id": "kn-place-003", "reference": "ಚಿಕ್ಕಮಗಳೂರು ಮತ್ತು ದಾವಣಗೆರೆ", "gloss": "Chikkamagaluru and Davanagere", "critical_terms": ["ಚಿಕ್ಕಮಗಳೂರು", "ದಾವಣಗೆರೆ"], "tags": ["district"]}
+{"id": "kn-place-004", "reference": "ವಿಜಯಪುರ ಜಿಲ್ಲೆಯಲ್ಲಿ ಎಷ್ಟು ಪ್ರಕರಣಗಳು", "gloss": "how many cases in Vijayapura district", "critical_terms": ["ವಿಜಯಪುರ"], "tags": ["district"]}
+{"id": "kn-place-005", "reference": "ತುಮಕೂರು ಮತ್ತು ಮಂಗಳೂರು ಠಾಣೆಗಳು", "gloss": "Tumakuru and Mangaluru police stations", "critical_terms": ["ತುಮಕೂರು", "ಮಂಗಳೂರು"], "tags": ["district"]}
+{"id": "kn-analytic-001", "reference": "ಪ್ರಸ್ತುತ ಅಪರಾಧ ಕೇಂದ್ರಗಳು ಎಲ್ಲಿವೆ", "gloss": "where are the current crime hotspots", "critical_terms": ["ಅಪರಾಧ"], "tags": ["analytic"]}
+{"id": "kn-analytic-002", "reference": "ಈ ವರ್ಷದ ಅಪರಾಧ ಪ್ರವೃತ್ತಿ ತೋರಿಸಿ", "gloss": "show this year's crime trend", "critical_terms": ["ಅಪರಾಧ ಪ್ರವೃತ್ತಿ"], "tags": ["analytic", "time_term"]}
+{"id": "kn-analytic-003", "reference": "ಪುನರಾವರ್ತಿತ ಅಪರಾಧಿಗಳ ಪಟ್ಟಿ", "gloss": "list of repeat offenders", "critical_terms": ["ಪುನರಾವರ್ತಿತ", "ಅಪರಾಧಿ"], "tags": ["analytic"]}
+{"id": "kn-analytic-004", "reference": "ಕಳೆದ ತಿಂಗಳ ಪ್ರಕರಣಗಳ ಸಂಖ್ಯೆ", "gloss": "number of cases last month", "critical_terms": ["ಕಳೆದ ತಿಂಗಳ"], "tags": ["time_term"]}
+{"id": "kn-analytic-005", "reference": "ಹಣಕಾಸು ವರ್ಗಾವಣೆ ಜಾಡು ತೋರಿಸಿ", "gloss": "show the money transfer trail", "critical_terms": ["ಹಣಕಾಸು", "ವರ್ಗಾವಣೆ"], "tags": ["financial"]}
+{"id": "kn-name-001", "reference": "ರಮೇಶ್ ಗೌಡ ವಿರುದ್ಧದ ಪ್ರಕರಣಗಳು", "gloss": "cases against Ramesh Gowda", "critical_terms": ["ರಮೇಶ್", "ಗೌಡ"], "tags": ["proper_noun"]}
+{"id": "kn-name-002", "reference": "ಸುರೇಶ್ ಕುಮಾರ್ ಅವರ ಅಪರಾಧ ಇತಿಹಾಸ", "gloss": "criminal history of Suresh Kumar", "critical_terms": ["ಸುರೇಶ್", "ಕುಮಾರ್"], "tags": ["proper_noun"]}
+{"id": "kn-name-003", "reference": "ಪ್ರಕಾಶ್ ನಾಯಕ್ ಮತ್ತು ಶಿವಪ್ಪ ಶೆಟ್ಟಿ", "gloss": "Prakash Naik and Shivappa Shetty", "critical_terms": ["ಪ್ರಕಾಶ್", "ನಾಯಕ್", "ಶೆಟ್ಟಿ"], "tags": ["proper_noun", "transliteration_risk"]}
+{"id": "kn-name-004", "reference": "ಲಕ್ಷ್ಮಿ ಬಾಯಿ ದೂರು ದಾಖಲಿಸಿದ್ದಾರೆ", "gloss": "Lakshmi Bai has filed a complaint", "critical_terms": ["ಲಕ್ಷ್ಮಿ", "ದೂರು"], "tags": ["proper_noun"]}
+{"id": "kn-name-005", "reference": "ಮಂಜುನಾಥ ಹೆಗಡೆ ಬಂಧನ", "gloss": "arrest of Manjunatha Hegde", "critical_terms": ["ಮಂಜುನಾಥ", "ಹೆಗಡೆ", "ಬಂಧನ"], "tags": ["proper_noun", "transliteration_risk"]}

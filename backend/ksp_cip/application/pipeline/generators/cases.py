@@ -144,6 +144,9 @@ class GenerationManifest:
     #: canonical name -> spellings actually written into FIRs, so entity
     #: resolution can be scored against ground truth.
     planted_identities: dict[str, list[str]] = field(default_factory=dict)
+    #: The account and day deliberately given a spike of transfers, so the
+    #: financial burst analysis can be scored against ground truth the same way.
+    financial_burst: dict[str, Any] = field(default_factory=dict)
 
 
 class CaseGenerator:

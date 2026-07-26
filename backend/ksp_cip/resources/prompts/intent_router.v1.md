@@ -9,6 +9,8 @@ Guidance per label:
 - LOOKUP_LOCATION: cases in a place, without a trend or hotspot framing.
 - NETWORK_QUERY: connections, associates, gangs, "how are X and Y linked".
 - TREND_QUERY: change over time, comparison across months or years.
+- SEASONAL_QUERY: a recurring calendar pattern (festival months, time of year,
+	"does this happen every year"), as distinct from a plain time trend.
 - HOTSPOT_QUERY: where crime concentrates geographically.
 - OFFENDER_PROFILE: repeat offenders, risk ranking, behavioural grouping.
 - SIMILAR_CASE: cases resembling a given case or description.
@@ -17,5 +19,15 @@ Guidance per label:
 - FINANCIAL_LINK: money movement between persons or entities.
 - EARLY_WARNING: emerging clusters, anomalies, alerts.
 - GENERAL_QA: anything else, including platform capability questions.
+
+Important tie-breakers:
+- Prefer the most specific label that the text clearly supports.
+- When a question is about a named person and asks for their offence history
+	or cases against them, choose LOOKUP_PERSON.
+- When a question combines a place with change over time, concentration, or
+	an alert pattern, choose the relevant analytics label rather than
+	LOOKUP_LOCATION.
+- Use GENERAL_QA only when the text has no clear case, person, place,
+	network, analytics, or financial cue.
 
 Answer with the label only.

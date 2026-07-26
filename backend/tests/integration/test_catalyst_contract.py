@@ -12,6 +12,7 @@ from ksp_cip.infrastructure.catalyst import bind_named, quote_literal
 from ksp_cip.infrastructure.catalyst.datastore import (
     _parse_insert,
     _parse_insert_columns,
+    _parse_upsert,
     _split_top_level,
 )
 
@@ -82,6 +83,86 @@ class TestInsertParsing:
     def test_escaped_quotes_inside_literals_are_preserved(self):
         parts = _split_top_level("'O\\'Brien', 2")
         assert len(parts) == 2
+
+
+class TestUpsertTranslation:
+    """ZCQL has no upsert. The adapter turns ``ON CONFLICT`` into read-then-write.
+
+    Without this, ten repository call sites across the loader, KV store and
+    intelligence tables would fail on a live Catalyst project.
+    """
+
+    def test_a_plain_insert_is_not_treated_as_an_upsert(self):
+        assert _parse_upsert("INSERT INTO t (a) VALUES (1)") is None
+
+    def test_do_update_resolves_excluded_references(self):
+        plan = _parse_upsert(
+            "INSERT INTO cip_kv (namespace, key, value_json) VALUES ('s', 'k', '{}')"
+            " ON CONFLICT (namespace, key) DO UPDATE SET value_json = excluded.value_json"
+        )
+        assert plan is not None
+        assert plan.table == "cip_kv"
+        assert plan.conflict_columns == ["namespace", "key"]
+        assert plan.resolved_updates() == {"value_json": "{}"}
+
+    def test_do_nothing_yields_an_empty_update_set(self):
+        plan = _parse_upsert(
+            "INSERT INTO ctl_batch (batch_id) VALUES ('b1') ON CONFLICT (batch_id) DO NOTHING"
+        )
+        assert plan is not None
+        assert plan.updates == {}
+
+    def test_multiple_assignments_are_all_parsed(self):
+        plan = _parse_upsert(
+            "INSERT INTO cip_graph_edge (edge_id, weight, case_ids) VALUES ('e1', 2.5, '[1]')"
+            " ON CONFLICT (edge_id) DO UPDATE SET weight = excluded.weight, case_ids = excluded.case_ids"
+        )
+        assert plan is not None
+        assert plan.resolved_updates() == {"weight": 2.5, "case_ids": "[1]"}
+
+    def test_a_literal_assignment_is_kept_verbatim(self):
+        plan = _parse_upsert(
+            "INSERT INTO t (a, b) VALUES (1, 2) ON CONFLICT (a) DO UPDATE SET b = 99"
+        )
+        assert plan is not None
+        assert plan.resolved_updates() == {"b": 99}
+
+    def test_on_conflict_inside_a_string_literal_is_not_a_clause(self):
+        """A brief-facts value mentioning the words must not be parsed as SQL."""
+        plan = _parse_upsert("INSERT INTO t (a) VALUES ('text on conflict (x) do nothing')")
+        assert plan is None
+
+    def test_an_excluded_column_absent_from_the_insert_is_refused(self):
+        plan = _parse_upsert(
+            "INSERT INTO t (a) VALUES (1) ON CONFLICT (a) DO UPDATE SET b = excluded.b"
+        )
+        assert plan is not None
+        with pytest.raises(CIPError):
+            plan.resolved_updates()
+
+    def test_an_unsupported_conflict_action_is_refused(self):
+        with pytest.raises(CIPError):
+            _parse_upsert("INSERT INTO t (a) VALUES (1) ON CONFLICT (a) DO MERGE")
+
+
+class TestSchemaCapability:
+    """P2-02: table_columns() replaces a repository constructing PRAGMA directly."""
+
+    def test_table_columns_reads_the_static_schema_manifest(self):
+        from ksp_cip.config import Settings
+        from ksp_cip.infrastructure.catalyst.datastore import CatalystDataStore
+
+        store = CatalystDataStore(Settings(catalyst_project_id="p"), auth=object())
+        columns = store.table_columns("curated_CaseMaster")
+        assert "CaseMasterID" in columns
+        assert "CrimeNo" in columns
+
+    def test_an_unknown_table_returns_an_empty_list_not_an_error(self):
+        from ksp_cip.config import Settings
+        from ksp_cip.infrastructure.catalyst.datastore import CatalystDataStore
+
+        store = CatalystDataStore(Settings(catalyst_project_id="p"), auth=object())
+        assert store.table_columns("not_a_real_table") == []
 
 
 class TestUnsupportedOperations:

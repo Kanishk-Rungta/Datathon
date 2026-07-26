@@ -22,17 +22,23 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Sequence
 
-from ...domain.enums import AgentName, Intent, Language, Permission
+from ...domain.enums import AgentName, Intent, Language, Permission, Provenance
 from ...domain.errors import AuthorizationError, CIPError
 from ...domain.models import AgentResult, Answer, Principal
 from ...infrastructure.observability import get_logger
 from ..nlu import NLUEngine
 from ..services.audit import AuditService
 from ..services.authorization import AuthorizationService
-from ..services.evidence import AnswerComposer, claim, merge_results
+from ..services.evidence import (
+    AnswerComposer,
+    claim,
+    empty_result_evidence,
+    merge_results,
+    trace,
+)
 from ..services.language import ConversationLanguageService, InboundText
 from ..services.memory import MemoryService
-from .base import AgentRequest, BaseAgent
+from .base import INDIVIDUAL_PREDICTION_RE, AgentRequest, BaseAgent
 from .crime_analytics import CrimeAnalyticsAgent
 from .data_retrieval import DataRetrievalAgent
 from .investigation_support import InvestigationSupportAgent
@@ -48,8 +54,12 @@ INTENT_ROUTING: dict[Intent, AgentName] = {
     Intent.LOOKUP_LOCATION: AgentName.DATA_RETRIEVAL,
     Intent.SIMILAR_CASE: AgentName.DATA_RETRIEVAL,
     Intent.TREND_QUERY: AgentName.CRIME_ANALYTICS,
+    Intent.SEASONAL_QUERY: AgentName.CRIME_ANALYTICS,
+    Intent.FORECAST_QUERY: AgentName.CRIME_ANALYTICS,
+    Intent.SPATIOTEMPORAL_QUERY: AgentName.CRIME_ANALYTICS,
     Intent.HOTSPOT_QUERY: AgentName.CRIME_ANALYTICS,
     Intent.DEMOGRAPHIC_INSIGHT: AgentName.CRIME_ANALYTICS,
+    Intent.SOCIOECONOMIC_QUERY: AgentName.CRIME_ANALYTICS,
     Intent.EARLY_WARNING: AgentName.CRIME_ANALYTICS,
     Intent.NETWORK_QUERY: AgentName.NETWORK_INTELLIGENCE,
     Intent.OFFENDER_PROFILE: AgentName.NETWORK_INTELLIGENCE,
@@ -184,6 +194,16 @@ class SupervisorAgent:
 
     # -------------------------------------------------------------- routing
     def _route(self, request: AgentRequest) -> list[AgentResult]:
+        # Checked before routing, because the prohibition is absolute and the
+        # question does not land on one intent. "Predict which person will
+        # offend" classifies as FORECAST_QUERY, "which accused will offend next
+        # month" as TREND_QUERY, and "who will commit a crime next year" as
+        # GENERAL_QA — an intent-local guard would catch one and let the other
+        # two through to an answer that looks responsive.
+        refusal = self._refuse_individual_prediction(request)
+        if refusal is not None:
+            return [refusal]
+
         required = INTENT_PERMISSIONS.get(request.intent)
         if required and not request.principal.has(required):
             raise AuthorizationError(
@@ -204,6 +224,53 @@ class SupervisorAgent:
             if secondary is not None and secondary.summary_claims:
                 results.append(secondary)
         return results
+
+    def _refuse_individual_prediction(self, request: AgentRequest) -> AgentResult | None:
+        """Refuse any request to say what a *person* will do next.
+
+        The platform scores recorded history and projects aggregate counts. It
+        does not estimate an individual's future offending, and answering such
+        a question with either a case list or an area projection would be worse
+        than refusing: it looks like an answer to the question that was asked.
+
+        Recorded-history questions ("what has this person been charged with")
+        are untouched — the pattern matches the future tense, not the person.
+        """
+        if not INDIVIDUAL_PREDICTION_RE.search(request.text_english or ""):
+            return None
+
+        evidence = empty_result_evidence(
+            key="prediction:individual-refused",
+            label="Individual future-offending prediction is not a capability of this platform",
+            detail={"requested": "individual future behaviour",
+                    "supported": "recorded history, and aggregate area forecasts"},
+        )
+        return AgentResult(
+            agent=AgentName.SUPERVISOR,
+            intent=request.intent,
+            summary_claims=[
+                claim(
+                    "This platform does not forecast whether a particular person will offend, and "
+                    "will not estimate that. Recorded history can be summarised for a named person, "
+                    "but it is a record of what happened, never a prediction of what they will do.",
+                    [evidence], provenance=Provenance.DETERMINISTIC_COMPUTATION,
+                ),
+                claim(
+                    "Projections are available for an area and crime type — for example "
+                    "\"project theft cases in Mysuru for the next quarter\".",
+                    [evidence], provenance=Provenance.DETERMINISTIC_COMPUTATION,
+                ),
+            ],
+            evidence=[evidence],
+            traces=[trace(
+                "individual_prediction_refused",
+                "The request asked for a forward-looking statement about a person. This is outside "
+                "the platform's approved scope; no retrieval, scoring or projection was run.",
+                inputs={"scope_requested": "individual"}, row_count=0,
+            )],
+            confidence=0.95,
+            warnings=["Individual future-offending prediction is not supported."],
+        )
 
     def _run(self, name: AgentName, request: AgentRequest) -> AgentResult | None:
         agent = self._agents[name]

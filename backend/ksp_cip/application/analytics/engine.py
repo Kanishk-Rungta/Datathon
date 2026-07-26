@@ -22,6 +22,32 @@ BASELINE_MONTHS = 12
 EARLY_WARNING_WINDOW_DAYS = 30
 PRIORITY_BANDS = ((70.0, "high"), (45.0, "medium"), (0.0, "routine"))
 OFFENDER_BANDS = ((70.0, "high"), (45.0, "medium"), (0.0, "low"))
+SEASONALITY_COMPARISON_YEARS = 3
+#: Below this many prior-year observations, a calendar bucket's deviation is
+#: not reported as a finding — it would be indistinguishable from noise.
+SEASONALITY_MIN_PRIOR_YEARS = 2
+SOCIOLOGY_SUPPRESSION_THRESHOLD = 10
+
+#: Months of observed history required before any forecast is published. Below
+#: this a projection would be extrapolation from noise, so the result is marked
+#: ``insufficient_history`` and carries no figure — the same refusal
+#: :data:`SEASONALITY_MIN_PRIOR_YEARS` makes for calendar buckets.
+FORECAST_MIN_HISTORY_MONTHS = 6
+#: Months averaged by the rolling-rate baseline.
+FORECAST_ROLLING_WINDOW = 3
+#: Seasonal-naive needs a full prior year plus enough remaining history to be
+#: backtested against; below this the method is not offered at all.
+FORECAST_SEASONAL_MIN_MONTHS = 18
+#: How many months ahead the forecast will project. Beyond a quarter the
+#: interval widens past the point of being useful for planning.
+FORECAST_DEFAULT_HORIZON = 3
+#: A series averaging fewer than this many cases a month is reported but
+#: flagged unstable: at these counts one incident moves the figure materially.
+FORECAST_SPARSE_MEAN = 3.0
+_MONTH_LABELS = {
+    1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June",
+    7: "July", 8: "August", 9: "September", 10: "October", 11: "November", 12: "December",
+}
 
 
 # ------------------------------------------------------------------ results
@@ -92,11 +118,113 @@ class EarlyWarningAlert:
 
 
 @dataclass(slots=True)
+class SeasonalBucket:
+    key: str
+    label: str
+    current_period: str | None
+    current_count: int
+    baseline_years: list[int]
+    baseline_mean: float
+    baseline_stddev: float
+    deviation_percent: float | None
+    z_score: float | None
+    insufficient_history: bool
+    case_ids: list[int]
+
+
+@dataclass(slots=True)
+class SeasonalityResult:
+    grouping: str
+    comparison_years: int
+    buckets: list[SeasonalBucket]
+    total_periods_considered: int
+    trace: ComputationTrace
+
+
+@dataclass(slots=True)
+class ForecastPoint:
+    """One projected month. Always a range, never a bare number."""
+
+    period: str
+    expected: float
+    lower: float
+    upper: float
+
+    def as_text(self) -> str:
+        return f"{self.period}: about {self.expected:.0f} (range {self.lower:.0f}–{self.upper:.0f})"
+
+
+@dataclass(slots=True)
+class BacktestMetric:
+    """How wrong a method was on history it did not get to see."""
+
+    method: str
+    mean_absolute_error: float
+    origins_tested: int
+    beat_constant_baseline: bool
+
+
+@dataclass(slots=True)
+class ForecastResult:
+    """An aggregate planning projection for one place × crime-type series.
+
+    There is deliberately no field here that could name or describe a person.
+    This is a statement about a *series of counts*, and the type system is the
+    cheapest place to make that permanent — the same technique
+    :class:`EventComparisonResult` uses to keep causal claims out.
+    """
+
+    points: list[ForecastPoint]
+    method: str
+    method_reason: str
+    horizon_months: int
+    history_months: int
+    observed_mean: float
+    #: Mean of the most recent months — the level the projection is actually
+    #: built from. Reported alongside :attr:`observed_mean` because on a series
+    #: that has shifted, quoting only the long-run average next to a very
+    #: different projection reads as an error rather than as a trend.
+    recent_mean: float
+    backtests: list[BacktestMetric]
+    insufficient_history: bool
+    sparse: bool
+    caveat: str
+    #: The observed cases the projection was computed from. A forecast is still
+    #: a claim, so it cites the records underneath it like any other.
+    case_ids: list[int]
+    trace: ComputationTrace
+
+
+@dataclass(slots=True)
+class EventComparisonResult:
+    event_id: str
+    event_name: str
+    event_type: str
+    window_start: str
+    window_end: str
+    window_days: int
+    observed_count: int
+    comparison_windows: list[dict[str, Any]]
+    comparison_mean: float
+    comparison_stddev: float
+    difference_percent: float | None
+    z_score: float | None
+    sample_size: int
+    sufficient_evidence: bool
+    case_ids: list[int]
+    trace: ComputationTrace
+
+
+@dataclass(slots=True)
 class SociologyResult:
     dimension: str
+    subject: str
     rows: list[dict[str, Any]]
     total_records: int
     top_associations: list[dict[str, Any]]
+    suppressed_group_count: int
+    suppressed_record_count: int
+    suppression_threshold: int
     case_ids: list[int]
     trace: ComputationTrace
 
@@ -379,6 +507,386 @@ class AnalyticsEngine:
         alerts.sort(key=lambda a: a.z_score, reverse=True)
         return alerts[:max_alerts]
 
+    # -------------------------------------------------------- seasonality
+    def seasonality(
+        self,
+        filters: AggregateFilter,
+        scope: UnitScope,
+        *,
+        comparison_years: int = SEASONALITY_COMPARISON_YEARS,
+        grouping: str = "month",
+    ) -> SeasonalityResult:
+        """Compare each calendar month's most recent count against that same
+        month's history in prior years.
+
+        This is deliberately not the same computation as :meth:`trend`. Trend
+        asks "is the series rising"; this asks "is a given calendar period
+        running hot or cold relative to what *that period* has historically
+        looked like" (festival-month spikes, monsoon patterns). A bucket with
+        fewer than :data:`SEASONALITY_MIN_PRIOR_YEARS` distinct prior years is
+        marked ``insufficient_history`` rather than given a deviation figure,
+        because a one-year "baseline" is not a baseline.
+        """
+        if grouping != "month":
+            raise ValueError("Only calendar-month grouping is supported currently")
+
+        rows = self._analytics.monthly_counts(filters, scope)
+        counts_by_period = {str(row["period"]): int(row["case_count"]) for row in rows if row["period"]}
+        if not counts_by_period:
+            empty_trace = ComputationTrace(
+                operation="seasonality",
+                description="No registered cases matched the filter, so no calendar pattern could be compared.",
+                inputs=_filter_inputs(filters),
+                row_count=0,
+            )
+            return SeasonalityResult(
+                grouping=grouping, comparison_years=comparison_years, buckets=[],
+                total_periods_considered=0, trace=empty_trace,
+            )
+
+        by_month: dict[str, list[tuple[int, int]]] = {}
+        for period, count in counts_by_period.items():
+            year_s, month_s = period.split("-")[:2]
+            by_month.setdefault(month_s, []).append((int(year_s), count))
+
+        buckets: list[SeasonalBucket] = []
+        for month_key in sorted(by_month):
+            entries = sorted(by_month[month_key], key=lambda e: e[0])
+            latest_year = entries[-1][0]
+            current_count = sum(c for y, c in entries if y == latest_year)
+            prior_years = sorted({y for y, _ in entries if y != latest_year}, reverse=True)[:comparison_years]
+            history = [c for y, c in entries if y in prior_years]
+            insufficient = len(prior_years) < SEASONALITY_MIN_PRIOR_YEARS
+            baseline_mean = stats.mean([float(v) for v in history]) if history else 0.0
+            baseline_sigma = stats.sample_stddev([float(v) for v in history]) if history else 0.0
+            deviation = None if insufficient else _round_optional(stats.percent_change(current_count, baseline_mean))
+            z = None if insufficient else round(stats.z_score(float(current_count), [float(v) for v in history]), 3)
+
+            month_start = date(latest_year, int(month_key), 1)
+            month_end = _parse_period_end(f"{latest_year}-{month_key}") or month_start
+            month_filter = AggregateFilter(
+                unit_ids=filters.unit_ids, district_ids=filters.district_ids,
+                crime_sub_head_ids=filters.crime_sub_head_ids, crime_head_ids=filters.crime_head_ids,
+                date_from=month_start, date_to=month_end,
+            )
+            case_rows = self._analytics.case_ids_for(month_filter, scope, limit=100)
+
+            buckets.append(SeasonalBucket(
+                key=month_key,
+                label=_MONTH_LABELS[int(month_key)],
+                current_period=f"{latest_year}-{month_key}",
+                current_count=current_count,
+                baseline_years=prior_years,
+                baseline_mean=round(baseline_mean, 3),
+                baseline_stddev=round(baseline_sigma, 3),
+                deviation_percent=deviation,
+                z_score=z,
+                insufficient_history=insufficient,
+                case_ids=[int(r["case_master_id"]) for r in case_rows],
+            ))
+
+        trace = ComputationTrace(
+            operation="seasonality",
+            description=(
+                f"Grouped {sum(counts_by_period.values())} registered cases by calendar month across "
+                f"{len({y for month in by_month.values() for y, _ in month})} distinct year(s), then compared each "
+                f"month's most recent count to the mean of up to {comparison_years} prior year(s) of that same "
+                "calendar month."
+            ),
+            inputs={**_filter_inputs(filters), "comparison_years": comparison_years, "grouping": grouping},
+            row_count=sum(counts_by_period.values()),
+            formula="z = (current − mean(prior years of same month)) / max(stddev(prior years), 1.0)",
+        )
+        return SeasonalityResult(
+            grouping=grouping, comparison_years=comparison_years, buckets=buckets,
+            total_periods_considered=len(counts_by_period), trace=trace,
+        )
+
+    # ------------------------------------------------------------ forecast
+    def forecast(
+        self,
+        filters: AggregateFilter,
+        scope: UnitScope,
+        *,
+        horizon_months: int = FORECAST_DEFAULT_HORIZON,
+    ) -> ForecastResult:
+        """Project recorded-case counts forward for planning purposes.
+
+        Two reproducible baselines compete, and the one that was *actually*
+        more accurate on this series wins:
+
+        ``seasonal-naive``
+            next month looks like the same month a year ago — right when a
+            series has a genuine annual shape (festivals, monsoon).
+        ``rolling-rate``
+            next month looks like the mean of the last few — right when it does
+            not.
+
+        Selection is by rolling-origin backtest, never by preference: each
+        method forecasts months it was not shown, and mean absolute error
+        decides. A method that cannot beat "assume the overall average forever"
+        is recorded as not having beaten it, so the reader can see that the
+        modelling earned nothing.
+
+        The interval comes from the chosen method's own backtest residuals
+        rather than from an assumed distribution. That keeps it honest: it says
+        "this method has historically been wrong by about this much on this
+        series", which is a claim the data supports.
+
+        **This forecasts a series of counts, never a person.** No argument here
+        accepts an individual, and :class:`ForecastResult` has no field that
+        could carry one.
+        """
+        horizon = max(1, min(int(horizon_months), 12))
+        rows = self._analytics.monthly_counts(filters, scope)
+        counts_by_period = {str(r["period"]): int(r["case_count"]) for r in rows if r["period"]}
+        series = _dense_monthly_series(counts_by_period)
+        history_months = len(series)
+        values = [float(count) for _, count in series]
+        observed_mean = stats.mean(values) if values else 0.0
+
+        if history_months < FORECAST_MIN_HISTORY_MONTHS:
+            return ForecastResult(
+                points=[], method="none",
+                method_reason=(
+                    f"Only {history_months} month(s) of recorded history match this filter. "
+                    f"At least {FORECAST_MIN_HISTORY_MONTHS} are needed before a projection means anything."
+                ),
+                horizon_months=horizon, history_months=history_months,
+                observed_mean=round(observed_mean, 3), recent_mean=round(observed_mean, 3),
+                backtests=[], insufficient_history=True, sparse=False, case_ids=[],
+                caveat=(
+                    "No projection is offered. Recorded history is too short to distinguish a pattern "
+                    "from noise, and a figure produced from it would look authoritative while meaning "
+                    "nothing."
+                ),
+                trace=ComputationTrace(
+                    operation="forecast",
+                    description=(
+                        "Counted registered cases per calendar month within the caller's authorized "
+                        "scope and found too little history to project from."
+                    ),
+                    inputs={**_filter_inputs(filters), "history_months": history_months,
+                            "minimum_required": FORECAST_MIN_HISTORY_MONTHS},
+                    row_count=history_months,
+                ),
+            )
+
+        candidates = ["rolling-rate"]
+        if history_months >= FORECAST_SEASONAL_MIN_MONTHS:
+            candidates.append("seasonal-naive")
+
+        backtests = [self._backtest(values, method) for method in candidates]
+        # Ties go to the simpler method: a seasonal model that is merely equal
+        # to a moving average has not earned its extra assumption.
+        best = min(backtests, key=lambda m: (m.mean_absolute_error, m.method != "rolling-rate"))
+
+        residual_spread = best.mean_absolute_error
+        points: list[ForecastPoint] = []
+        working = list(values)
+        last_period = series[-1][0]
+        for step in range(1, horizon + 1):
+            expected = _project(working, best.method)
+            # The interval widens with distance because each step forecasts
+            # partly from previous forecasts, not from observation.
+            spread = residual_spread * (1.0 + 0.5 * (step - 1))
+            points.append(ForecastPoint(
+                period=_add_months(last_period, step),
+                expected=round(max(expected, 0.0), 2),
+                lower=round(max(expected - spread, 0.0), 2),
+                upper=round(expected + spread, 2),
+            ))
+            working.append(expected)
+
+        recent_mean = stats.mean(values[-FORECAST_ROLLING_WINDOW:])
+        # Stability is a property of the level being projected, not of the
+        # long-run average. A series that averaged 0.8 over three years but now
+        # runs at 7 a month is not one where a single case moves the answer.
+        sparse = recent_mean < FORECAST_SPARSE_MEAN
+        caveat = (
+            "This is a projection of recorded-case counts for planning, not a prediction of specific "
+            "crimes and not a statement about any individual. It assumes recording practice and "
+            "reporting rates continue unchanged, and it cannot anticipate an event it has never seen."
+        )
+        if sparse:
+            caveat += (
+                f" This series is running at about {recent_mean:.1f} case(s) a month, so a single "
+                "incident moves the figure materially — treat the range, not the midpoint, as the answer."
+            )
+        if not best.beat_constant_baseline:
+            caveat += (
+                " On this series the method did not beat simply assuming the long-run average, so the "
+                "projection carries no more information than that average."
+            )
+
+        case_rows = self._analytics.case_ids_for(filters, scope, limit=200)
+        return ForecastResult(
+            points=points, method=best.method,
+            case_ids=[int(r["case_master_id"]) for r in case_rows],
+            method_reason=(
+                f"Chosen by rolling-origin backtest over {best.origins_tested} origin(s): "
+                f"mean absolute error {best.mean_absolute_error:.2f} case(s) per month, against "
+                + ", ".join(f"{m.method} {m.mean_absolute_error:.2f}" for m in backtests if m is not best)
+                if len(backtests) > 1 else
+                f"Only reproducible method available at {history_months} months of history; "
+                f"backtested mean absolute error {best.mean_absolute_error:.2f} case(s) per month."
+            ),
+            horizon_months=horizon, history_months=history_months,
+            observed_mean=round(observed_mean, 3), recent_mean=round(recent_mean, 3),
+            backtests=backtests, insufficient_history=False, sparse=sparse, caveat=caveat,
+            trace=ComputationTrace(
+                operation="forecast",
+                description=(
+                    "Counted registered cases per calendar month within the caller's authorized scope, "
+                    "densified the series with zero months, backtested each candidate baseline against "
+                    "history it was not shown, and projected forward with the more accurate one. "
+                    "Intervals are that method's own backtest error, not an assumed distribution."
+                ),
+                inputs={
+                    **_filter_inputs(filters),
+                    "history_months": history_months,
+                    "horizon_months": horizon,
+                    "methods_considered": candidates,
+                    "method_selected": best.method,
+                    "rolling_window_months": FORECAST_ROLLING_WINDOW,
+                    "sparse_series_threshold": FORECAST_SPARSE_MEAN,
+                },
+                row_count=history_months,
+                formula=(
+                    "rolling-rate: mean(last 3 observed months); "
+                    "seasonal-naive: value from the same month one year earlier; "
+                    "interval: expected ± MAE × (1 + 0.5 × (step − 1))"
+                ),
+                components=[
+                    {"method": m.method, "mean_absolute_error": m.mean_absolute_error,
+                     "origins_tested": m.origins_tested,
+                     "beat_constant_baseline": m.beat_constant_baseline,
+                     "selected": m is best}
+                    for m in backtests
+                ],
+            ),
+        )
+
+    def _backtest(self, values: Sequence[float], method: str) -> BacktestMetric:
+        """Rolling-origin evaluation: forecast each month from only its past.
+
+        No look-ahead. The origin walks forward and the method never sees the
+        month it is being scored on, which is the only way an error figure here
+        means what it claims to.
+        """
+        warmup = 12 if method == "seasonal-naive" else FORECAST_ROLLING_WINDOW
+        errors: list[float] = []
+        constant_errors: list[float] = []
+        for index in range(warmup, len(values)):
+            history = list(values[:index])
+            predicted = _project(history, method)
+            actual = values[index]
+            errors.append(abs(predicted - actual))
+            constant_errors.append(abs(stats.mean(history) - actual))
+        if not errors:
+            return BacktestMetric(method=method, mean_absolute_error=float("inf"),
+                                  origins_tested=0, beat_constant_baseline=False)
+        mae = stats.mean(errors)
+        return BacktestMetric(
+            method=method,
+            mean_absolute_error=round(mae, 3),
+            origins_tested=len(errors),
+            beat_constant_baseline=mae <= stats.mean(constant_errors),
+        )
+
+    # ---------------------------------------------------- event comparison
+    def event_comparison(
+        self,
+        filters: AggregateFilter,
+        scope: UnitScope,
+        *,
+        event: dict[str, Any],
+        comparison_window_count: int = 4,
+    ) -> EventComparisonResult:
+        """Compare an event window against matched non-event windows.
+
+        The matching is deliberately simple and stated rather than clever: the
+        same number of days, immediately preceding the event window, repeated
+        ``comparison_window_count`` times and skipping the event window itself.
+        Equal-length adjacent windows control for the obvious confounders
+        (season, reporting practice) without pretending to be a causal design.
+
+        **This measures coincidence, never cause.** The result deliberately
+        carries no field a caller could read as causal, and the agent renders
+        it as "was elevated during", per implementationv2 §9.2.
+        """
+        window_start = date.fromisoformat(str(event["date_from"])[:10])
+        window_end = date.fromisoformat(str(event["date_to"])[:10])
+        window_days = max(1, (window_end - window_start).days + 1)
+
+        observed = self._analytics.counts_between(
+            filters, scope, date_from=window_start, date_to=window_end
+        )
+
+        comparison_windows: list[dict[str, Any]] = []
+        cursor_end = window_start - timedelta(days=1)
+        for _ in range(comparison_window_count):
+            cursor_start = cursor_end - timedelta(days=window_days - 1)
+            count = self._analytics.counts_between(
+                filters, scope, date_from=cursor_start, date_to=cursor_end
+            )
+            comparison_windows.append({
+                "start": cursor_start.isoformat(),
+                "end": cursor_end.isoformat(),
+                "count": count,
+            })
+            cursor_end = cursor_start - timedelta(days=1)
+
+        counts = [float(w["count"]) for w in comparison_windows]
+        comparison_mean = stats.mean(counts)
+        comparison_sigma = stats.sample_stddev(counts)
+        # With too few comparison windows, or none carrying any cases, a
+        # percentage difference would be arithmetic theatre.
+        sufficient = len(counts) >= 2 and sum(counts) > 0
+        difference = _round_optional(stats.percent_change(observed, comparison_mean)) if sufficient else None
+        z = round(stats.z_score(float(observed), counts), 3) if sufficient else None
+
+        window_filter = AggregateFilter(
+            unit_ids=filters.unit_ids, district_ids=filters.district_ids,
+            crime_sub_head_ids=filters.crime_sub_head_ids, crime_head_ids=filters.crime_head_ids,
+            date_from=window_start, date_to=window_end,
+        )
+        case_rows = self._analytics.case_ids_for(window_filter, scope, limit=100)
+
+        trace = ComputationTrace(
+            operation="event_comparison",
+            description=(
+                f"Counted cases in the {window_days}-day window of '{event.get('event_name')}' "
+                f"({window_start} to {window_end}) and compared them with {len(comparison_windows)} "
+                f"immediately preceding {window_days}-day window(s) under the same filters. "
+                "This measures whether counts were elevated during the window, not whether the "
+                "event caused them."
+            ),
+            inputs={**_filter_inputs(filters), "event_id": event.get("event_id"),
+                    "window_days": window_days, "comparison_windows": len(comparison_windows)},
+            row_count=observed,
+            formula="z = (observed − mean(matched windows)) / max(stddev(matched windows), 1.0)",
+            components=comparison_windows,
+        )
+        return EventComparisonResult(
+            event_id=str(event.get("event_id") or ""),
+            event_name=str(event.get("event_name") or "unnamed event"),
+            event_type=str(event.get("event_type") or "unspecified"),
+            window_start=window_start.isoformat(),
+            window_end=window_end.isoformat(),
+            window_days=window_days,
+            observed_count=observed,
+            comparison_windows=comparison_windows,
+            comparison_mean=round(comparison_mean, 3),
+            comparison_stddev=round(comparison_sigma, 3),
+            difference_percent=difference,
+            z_score=z,
+            sample_size=len(comparison_windows),
+            sufficient_evidence=sufficient,
+            case_ids=[int(r["case_master_id"]) for r in case_rows],
+            trace=trace,
+        )
+
     # --------------------------------------------------------- sociology
     def sociology(
         self,
@@ -386,16 +894,28 @@ class AnalyticsEngine:
         scope: UnitScope,
         *,
         dimension: str,
+        subject: str = "complainant",
         top_n: int = 10,
+        suppression_threshold: int = SOCIOLOGY_SUPPRESSION_THRESHOLD,
     ) -> SociologyResult:
-        rows = self._analytics.complainant_demographics(filters, scope, dimension=dimension)
+        if subject == "victim":
+            rows = self._analytics.victim_demographic_dimension(filters, scope, dimension=dimension)
+        else:
+            rows = self._analytics.complainant_demographics(filters, scope, dimension=dimension)
         total = sum(int(row["record_count"]) for row in rows)
         by_value: dict[str, int] = {}
         for row in rows:
             key = str(row.get("dimension_value") or "unknown")
             by_value[key] = by_value.get(key, 0) + int(row["record_count"])
+
+        # Small-cell suppression: a demographic group with very few records is
+        # not reported individually, so a rare (dimension value × district)
+        # combination cannot be used to re-identify a specific complainant.
+        visible = {k: v for k, v in by_value.items() if v >= suppression_threshold}
+        suppressed = {k: v for k, v in by_value.items() if v < suppression_threshold}
+
         associations: list[dict[str, Any]] = []
-        for value, count in stats.top_n([(k, float(v)) for k, v in by_value.items()], top_n):
+        for value, count in stats.top_n([(k, float(v)) for k, v in visible.items()], top_n):
             sub_heads = [
                 {"sub_head": row.get("sub_head") or "unclassified", "count": int(row["record_count"])}
                 for row in rows
@@ -408,24 +928,41 @@ class AnalyticsEngine:
                     "records": int(count),
                     "share_percent": round(stats.share(count, total), 2),
                     "top_crime_sub_heads": sub_heads[:3],
+                    "suppressed": False,
                 }
             )
+        suppressed_records = sum(suppressed.values())
+        if suppressed:
+            associations.append({
+                "value": f"{len(suppressed)} smaller group(s), each under {suppression_threshold} records",
+                "records": suppressed_records,
+                "share_percent": round(stats.share(suppressed_records, total), 2),
+                "top_crime_sub_heads": [],
+                "suppressed": True,
+            })
+
         case_rows = self._analytics.case_ids_for(filters, scope, limit=300)
         trace = ComputationTrace(
             operation="sociology",
             description=(
-                f"Cross-tabulated {total} complainant records by {dimension} against crime sub-head using "
-                "GROUP BY over curated_ComplainantDetails joined to curated_CaseMaster. Counts are of "
-                "recorded complaints, not of population."
+                f"Cross-tabulated {total} {subject} records by {dimension} against crime sub-head using "
+                f"GROUP BY over curated_{'Victim' if subject == 'victim' else 'ComplainantDetails'} joined to "
+                "curated_CaseMaster. Counts are of recorded records, not of population. Groups under "
+                f"{suppression_threshold} records are merged rather than shown individually."
             ),
-            inputs={**_filter_inputs(filters), "dimension": dimension},
+            inputs={**_filter_inputs(filters), "dimension": dimension, "subject": subject,
+                    "suppression_threshold": suppression_threshold},
             row_count=total,
         )
         return SociologyResult(
             dimension=dimension,
+            subject=subject,
             rows=rows,
             total_records=total,
             top_associations=associations,
+            suppressed_group_count=len(suppressed),
+            suppressed_record_count=suppressed_records,
+            suppression_threshold=suppression_threshold,
             case_ids=[int(r["case_master_id"]) for r in case_rows],
             trace=trace,
         )
@@ -552,3 +1089,46 @@ def _parse_period_end(period: str | None) -> date | None:
 
 def _round_optional(value: float | None) -> float | None:
     return round(value, 2) if value is not None else None
+
+
+def _dense_monthly_series(counts_by_period: dict[str, int]) -> list[tuple[str, int]]:
+    """Fill the gaps between the first and last observed month with zeros.
+
+    A month with no recorded case is an observation, not a missing value.
+    Dropping it would make a sporadic series look steady and would let a
+    rolling mean average over gaps it never saw — the same reason the burst
+    analysis walks calendar days rather than active ones.
+    """
+    periods = sorted(p for p in counts_by_period if _parse_period_start(p))
+    if not periods:
+        return []
+    start, end = _parse_period_start(periods[0]), _parse_period_start(periods[-1])
+    if start is None or end is None:
+        return []
+    series: list[tuple[str, int]] = []
+    year, month = start.year, start.month
+    while (year, month) <= (end.year, end.month):
+        key = f"{year:04d}-{month:02d}"
+        series.append((key, int(counts_by_period.get(key, 0))))
+        month += 1
+        if month > 12:
+            year, month = year + 1, 1
+    return series
+
+
+def _project(history: Sequence[float], method: str) -> float:
+    """One step ahead from the given history, by the named baseline."""
+    if not history:
+        return 0.0
+    if method == "seasonal-naive" and len(history) >= 12:
+        return float(history[-12])
+    window = list(history[-FORECAST_ROLLING_WINDOW:])
+    return stats.mean(window)
+
+
+def _add_months(period: str, steps: int) -> str:
+    start = _parse_period_start(period)
+    if start is None:
+        return period
+    total = (start.year * 12 + (start.month - 1)) + steps
+    return f"{total // 12:04d}-{total % 12 + 1:02d}"

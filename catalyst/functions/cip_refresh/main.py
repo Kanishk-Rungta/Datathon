@@ -2,28 +2,84 @@
 
 Stages map exactly to the local pipeline classes. The Circuit decides *when*
 and *in what order*; this function decides nothing.
+
+Handler shape (``def handler(event, context)``) matches Zoho's documented
+Event Function contract — see ``docs/deployment/catalyst-runtime.md`` for the
+verification behind that statement. Nothing here should be changed to work
+around a Catalyst runtime detail without updating that document too.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import sys
+import time
+import uuid
 from pathlib import Path
 
-BACKEND_ROOT = Path(__file__).resolve().parents[3] / "backend"
-if str(BACKEND_ROOT) not in sys.path:
-    sys.path.insert(0, str(BACKEND_ROOT))
+_HERE = Path(__file__).resolve().parent
+# `_bootstrap.py` sits alongside this file once staged (see
+# scripts/build_catalyst_artifact.py); in the repo checkout it lives two
+# levels up at `catalyst/_bootstrap.py`. Try the staged layout first.
+sys.path.insert(0, str(_HERE))
+try:
+    from _bootstrap import bootstrap
+except ImportError:
+    sys.path.insert(0, str(_HERE.parents[1]))
+    from _bootstrap import bootstrap
 
-os.environ.setdefault("KSPCIP_DATASTORE_BACKEND", "catalyst")
-os.environ.setdefault("KSPCIP_ENVIRONMENT", "catalyst")
+bootstrap(__file__)
 
 from ksp_cip.interface.container import build_container  # noqa: E402
 
+VALID_STAGES = ("ingest", "data_quality", "intelligence", "retention")
+
 
 def run_stage(stage: str) -> dict:
-    container = build_container()
+    if stage not in VALID_STAGES:
+        raise ValueError(f"Unknown pipeline stage: {stage!r}. Must be one of {VALID_STAGES}.")
 
+    correlation_id = uuid.uuid4().hex
+    started = time.time()
+    container = build_container()
+    control = container.control
+
+    # A durable run-start record so a stuck or failed invocation is visible in
+    # the control tables rather than only in transient function logs.
+    run_started = {
+        "batch_id": f"refresh-{stage}-{correlation_id}",
+        "source_table": f"stage:{stage}",
+        "object_key": "",
+        "row_count": 0,
+        "min_pk": None,
+        "max_pk": None,
+        "content_sha256": None,
+        "status": "RECEIVED",
+    }
+    try:
+        control.register_batch(run_started)
+    except Exception:  # noqa: BLE001 - a control-table hiccup must not block the stage itself
+        pass
+
+    try:
+        result = _run_stage(stage, container)
+    except Exception as exc:  # noqa: BLE001 - convert to a bounded, durable error category
+        try:
+            control.mark_batch(run_started["batch_id"], "FAILED", error=type(exc).__name__)
+        except Exception:  # noqa: BLE001
+            pass
+        raise
+    else:
+        try:
+            control.mark_batch(run_started["batch_id"], "LOADED")
+        except Exception:  # noqa: BLE001
+            pass
+        result["correlation_id"] = correlation_id
+        result["duration_seconds"] = round(time.time() - started, 3)
+        return result
+
+
+def _run_stage(stage: str, container) -> dict:
     if stage == "ingest":
         # Batches are landed in Stratus by the Sync Agent; the loader consumes
         # whatever is present and is safe to re-run on the same batch.

@@ -36,6 +36,16 @@ class DataStore(Protocol):
     def transaction(self) -> Any:
         """Context manager giving atomic semantics."""
 
+    def table_columns(self, table: str) -> list[str]:
+        """Declared column names for ``table``, in schema order.
+
+        This is the portable replacement for a repository constructing
+        ``PRAGMA table_info(...)`` directly — a statement only SQLite
+        understands. Callers that need "what columns does this table have"
+        (the loader's schema-conformance check) go through this instead of
+        building dialect-specific introspection SQL themselves.
+        """
+
 
 @runtime_checkable
 class FileStore(Protocol):

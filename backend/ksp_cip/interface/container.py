@@ -21,7 +21,7 @@ from ..application.agents import (
     NetworkIntelligenceAgent,
     SupervisorAgent,
 )
-from ..application.analytics import AnalyticsEngine
+from ..application.analytics import AnalyticsEngine, SocioEconomicCorrelator, SpatioTemporalForecaster
 from ..application.graph import EntityResolver, FinancialAnalyzer, GraphBuilder, GraphService
 from ..application.nlu import NLUEngine
 from ..application.pipeline import DataQualitySuite, IntelligenceRefresher, SeedPipeline
@@ -47,12 +47,14 @@ from ..infrastructure.db.repositories import (
     ControlRepository,
     ConversationRepository,
     EmbeddingRepository,
+    EventCalendarRepository,
     FinancialRepository,
     GraphRepository,
     HotspotRepository,
     IdentityRepository,
     PriorityRepository,
     ReferenceRepository,
+    SocioEconomicRepository,
     UserRepository,
 )
 from ..infrastructure.db.sqlite_store import SQLiteDataStore
@@ -89,11 +91,17 @@ class Container:
     conversations: ConversationRepository
     audit_repository: AuditRepository
     control: ControlRepository
+    events: EventCalendarRepository
+    socioeconomic_repository: SocioEconomicRepository
 
     # services
     audit: AuditService
     authorization: AuthorizationService
     identity_service: IdentityService
+    #: Verifies bearer tokens. The local ``IdentityService`` locally; the
+    #: Catalyst provider when ``KSPCIP_IDENTITY_BACKEND=catalyst``.
+    identity_provider: Any
+    cache: Any
     memory: MemoryService
     language: ConversationLanguageService
     composer: AnswerComposer
@@ -102,6 +110,8 @@ class Container:
     # application
     llm: Any
     engine: AnalyticsEngine
+    socioeconomic_correlator: SocioEconomicCorrelator
+    spatiotemporal_forecaster: SpatioTemporalForecaster
     graph: GraphService
     retrieval: RetrievalService
     nlu: NLUEngine
@@ -135,6 +145,10 @@ class Container:
             "status": "ok" if case_count >= 0 else "degraded",
             "environment": str(self.settings.environment),
             "datastore": str(self.settings.datastore_backend),
+            "filestore": str(self.settings.filestore_backend),
+            "keyvalue": str(self.settings.keyvalue_backend),
+            "cache": str(self.settings.cache_backend),
+            "identity": str(self.settings.identity_backend),
             "llm_provider": str(self.settings.llm_provider),
             "language_provider": self.language.provider_name,
             "language_full_fidelity": self.language.is_full_fidelity,
@@ -148,10 +162,16 @@ def build_container(settings: Settings | None = None) -> Container:
     settings = settings or get_settings()
     configure_logging(level=settings.log_level, json_output=settings.log_json)
 
+    problems = settings.deployment_problems()
+    if problems:
+        # Fail at startup with every problem at once, rather than surfacing
+        # them one restart at a time or mid-conversation.
+        raise ValueError("Configuration is not deployable:\n  - " + "\n  - ".join(problems))
+
     clock = SystemClock()
     store = _build_store(settings)
     apply_migrations(store)
-    filestore = LocalFileStore(settings.filestore_root)
+    filestore = _build_filestore(settings)
 
     reference = ReferenceRepository(store)
     cases = CaseRepository(store)
@@ -167,11 +187,15 @@ def build_container(settings: Settings | None = None) -> Container:
     conversations = ConversationRepository(store, ttl_days=settings.conversation_memory_ttl_days)
     audit_repository = AuditRepository(store)
     control = ControlRepository(store)
-    kv = RelationalKeyValueStore(store)
+    events = EventCalendarRepository(store)
+    socioeconomic_repository = SocioEconomicRepository(store)
+    kv = _build_kv(settings, store)
+    cache = _build_cache(settings)
 
     audit = AuditService(audit_repository)
     authorization = AuthorizationService(reference)
     identity_service = IdentityService(users, authorization, settings)
+    identity_provider = _build_identity(settings, users, authorization, identity_service)
     memory = MemoryService(conversations, kv, window_turns=settings.conversation_window_turns,
                            ttl_days=settings.conversation_memory_ttl_days)
     language_provider = build_language_service(settings)
@@ -189,7 +213,9 @@ def build_container(settings: Settings | None = None) -> Container:
         early_warning_sigma=settings.early_warning_sigma,
         early_warning_min_baseline=settings.early_warning_min_baseline,
     )
-    graph = GraphService(graph_repository)
+    socioeconomic_correlator = SocioEconomicCorrelator(analytics, socioeconomic_repository)
+    spatiotemporal_forecaster = SpatioTemporalForecaster(analytics, grid_metres=settings.hotspot_grid_metres)
+    graph = _build_graph(settings, graph_repository)
     embedding_model = HashedNgramEmbeddingModel(
         dimensions=settings.embedding_dimensions, model_name=settings.embedding_model_name
     )
@@ -203,7 +229,12 @@ def build_container(settings: Settings | None = None) -> Container:
         audit, cases, reference, retrieval, authorization,
         default_page_size=settings.default_case_page_size,
     )
-    crime_analytics = CrimeAnalyticsAgent(audit, engine, analytics, reference, hotspots, alerts, authorization)
+    crime_analytics = CrimeAnalyticsAgent(
+        audit, engine, analytics, reference, hotspots, alerts, authorization,
+        correlator=socioeconomic_correlator,
+        spatiotemporal_forecaster=spatiotemporal_forecaster,
+        graph=graph,
+    )
     analyzer = FinancialAnalyzer()
     network_intelligence = NetworkIntelligenceAgent(
         audit, graph, identities, cases, financial, analyzer, authorization
@@ -249,9 +280,13 @@ def build_container(settings: Settings | None = None) -> Container:
         graph_repository=graph_repository, embeddings=embeddings, identities=identities,
         hotspots=hotspots, alerts=alerts, priority=priority, financial=financial,
         users=users, conversations=conversations, audit_repository=audit_repository,
-        control=control, audit=audit, authorization=authorization,
-        identity_service=identity_service, memory=memory, language=language,
-        composer=composer, pdf=pdf, llm=llm, engine=engine, graph=graph,
+        control=control, events=events, socioeconomic_repository=socioeconomic_repository,
+        audit=audit, authorization=authorization,
+        identity_service=identity_service, identity_provider=identity_provider,
+        cache=cache, memory=memory, language=language,
+        composer=composer, pdf=pdf, llm=llm, engine=engine,
+        socioeconomic_correlator=socioeconomic_correlator,
+        spatiotemporal_forecaster=spatiotemporal_forecaster, graph=graph,
         retrieval=retrieval, nlu=nlu, supervisor=supervisor,
         data_retrieval=data_retrieval, crime_analytics=crime_analytics,
         network_intelligence=network_intelligence, investigation_support=investigation_support,
@@ -269,6 +304,78 @@ def _build_store(settings: Settings) -> DataStore:
         return CatalystDataStore(settings)
     settings.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
     return SQLiteDataStore(settings.sqlite_path, timeout=settings.sqlite_timeout_seconds)
+
+
+def _build_filestore(settings: Settings) -> FileStore:
+    """Bind the file store.
+
+    Kept separate from :func:`_build_store` on purpose: an export written to a
+    Catalyst function's local disk disappears at the next cold start, and the
+    audit row would then cite a file nobody can fetch. The settings validator
+    refuses that combination outright.
+    """
+    from ..config.settings import FileStoreBackend
+
+    if settings.filestore_backend is FileStoreBackend.CATALYST:
+        from ..infrastructure.catalyst.stratus import StratusFileStore
+
+        return StratusFileStore(settings)
+    settings.filestore_root.mkdir(parents=True, exist_ok=True)
+    return LocalFileStore(settings.filestore_root)
+
+
+def _build_kv(settings: Settings, store: DataStore) -> Any:
+    from ..config.settings import KeyValueBackend
+
+    if settings.keyvalue_backend is KeyValueBackend.CATALYST:
+        from ..infrastructure.catalyst.nosql import CatalystKeyValueStore
+
+        return CatalystKeyValueStore(store, table=settings.catalyst_nosql_table)
+    return RelationalKeyValueStore(store)
+
+
+def _build_cache(settings: Settings) -> Any:
+    from ..config.settings import CacheBackend
+
+    if settings.cache_backend is CacheBackend.CATALYST:
+        from ..infrastructure.catalyst.cache import CatalystCache
+
+        return CatalystCache(settings)
+    from ..infrastructure.catalyst.cache import InProcessCache
+
+    return InProcessCache()
+
+
+def _build_identity(settings: Settings, users: UserRepository, authorization: AuthorizationService,
+                    local: IdentityService) -> Any:
+    """Return the component that turns a bearer token into a ``Principal``.
+
+    The local service also owns password login, so it is always constructed;
+    the Catalyst provider only replaces token verification.
+    """
+    from ..config.settings import IdentityBackend
+
+    if settings.identity_backend is IdentityBackend.CATALYST:
+        from ..infrastructure.catalyst.identity import CatalystIdentityProvider
+
+        return CatalystIdentityProvider(users, authorization, settings)
+    return local
+
+
+def _build_graph(settings: Settings, graph_repository: GraphRepository) -> Any:
+    """Return GraphService (NetworkX) or Neo4jGraphAdapter based on configuration."""
+    from ..config.settings import GraphBackend
+
+    if settings.graph_backend is GraphBackend.NEO4J:
+        from ..infrastructure.graph.neo4j import Neo4jGraphAdapter
+
+        return Neo4jGraphAdapter(
+            graph_repository,
+            uri=settings.neo4j_uri,
+            user=settings.neo4j_user,
+            password=settings.neo4j_password,
+        )
+    return GraphService(graph_repository)
 
 
 @functools.lru_cache(maxsize=1)

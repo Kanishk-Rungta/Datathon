@@ -99,8 +99,15 @@ def command_config(args: argparse.Namespace) -> int:
     for key in list(redacted):
         if any(marker in key for marker in ("secret", "key", "token", "password")):
             redacted[key] = "***" if redacted[key] else None
-    _print(redacted)
-    return 0
+    # Problems name the offending *setting*, never its value, so this output is
+    # safe to paste into a ticket.
+    problems = settings.deployment_problems()
+    _print({
+        "settings": redacted,
+        "deployable": not problems,
+        "problems": problems,
+    })
+    return 1 if problems else 0
 
 
 def build_parser() -> argparse.ArgumentParser:

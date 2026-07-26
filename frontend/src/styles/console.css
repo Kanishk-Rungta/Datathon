@@ -199,6 +199,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
   color: var(--ink-faint);
 }
 
+.turn__audio {
+  margin-top: 9px;
+  width: 100%;
+  max-width: 320px;
+  height: 32px;
+}
+
 .pill {
   font-family: var(--mono);
   font-size: 10px;
@@ -342,6 +349,54 @@ button, input, select, textarea { font: inherit; color: inherit; }
   letter-spacing: -0.01em;
 }
 .panel__note { font-size: 11px; color: var(--ink-faint); }
+
+/* A projection is banded, not styled like observed data, so it cannot be
+   skim-read as a record of something that happened. */
+/* Live transcript, shown while dictating. Visually provisional — it has not
+   been inserted into the message yet and may still change. */
+.composer__interim {
+  flex-basis: 100%;
+  margin-bottom: 6px;
+  padding: 5px 9px;
+  border-left: 2px solid var(--indigo);
+  background: var(--indigo-soft);
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.forecast-banner {
+  margin-bottom: 10px;
+  padding: 7px 10px;
+  border-left: 3px solid var(--amber);
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.panel__subtitle {
+  margin: 16px 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.flow-chain {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.flow-chain:last-of-type { border-bottom: none; }
+.flow-chain__path { font-size: 12px; line-height: 1.5; }
+.flow-chain__meta {
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+}
 
 .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--ink); background: var(--paper-raised); }
 .tabs button {

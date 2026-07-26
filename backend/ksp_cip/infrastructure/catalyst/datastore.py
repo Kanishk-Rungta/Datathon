@@ -27,6 +27,7 @@ import json
 import threading
 import time
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any, Iterator, Mapping, Sequence
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
@@ -174,12 +175,42 @@ class CatalystDataStore:
         statement = bind_named(sql, params or {})
         head = statement.lstrip().split(None, 1)[0].upper()
         if head == "INSERT":
+            upsert = _parse_upsert(statement)
+            if upsert is not None:
+                return self._upsert(upsert)
             table, values = _parse_insert(statement)
             return len(self._insert_rows(table, [values]))
         if head in {"UPDATE", "DELETE"}:
             self._zcql(statement)
             return 0
         raise CIPError(f"Unsupported statement for the Catalyst adapter: {head}", sql=statement[:120])
+
+    def _upsert(self, plan: "UpsertPlan") -> int:
+        """Emulate ``INSERT … ON CONFLICT`` with read-then-write.
+
+        ZCQL has no upsert. Doing this in the adapter rather than in ten
+        repositories keeps one dialect difference in one place, and keeps the
+        SQLite path on its native atomic statement.
+
+        This is *not* atomic: a concurrent writer between the SELECT and the
+        write can produce a duplicate. Every caller of this path is a pipeline
+        stage keyed on a deterministic natural key and designed to be replayed
+        (implementationv2 §5.2), so a re-run converges. It must not be used for
+        a counter or anything else where lost updates matter.
+        """
+        where = " AND ".join(
+            f"{column} = {quote_literal(plan.values.get(column))}" for column in plan.conflict_columns
+        )
+        existing = self._zcql(f"SELECT ROWID FROM {plan.table} WHERE {where} LIMIT 0, 1")
+        if not existing:
+            return len(self._insert_rows(plan.table, [plan.values]))
+        if not plan.updates:  # DO NOTHING
+            return 0
+        assignments = ", ".join(
+            f"{column} = {quote_literal(value)}" for column, value in plan.resolved_updates().items()
+        )
+        self._zcql(f"UPDATE {plan.table} SET {assignments} WHERE {where}")
+        return 1
 
     def execute_many(self, sql: str, rows: Sequence[Mapping[str, Any]]) -> int:
         if not rows:
@@ -210,6 +241,21 @@ class CatalystDataStore:
 
     def close(self) -> None:  # pragma: no cover - nothing to release
         return None
+
+    def table_columns(self, table: str) -> list[str]:
+        """Declared columns for ``table``, from the static schema manifest.
+
+        Catalyst has no documented live introspection endpoint equivalent to
+        SQLite's ``PRAGMA table_info``, so this reads the same
+        ``schema.sql`` + ``migrations.py`` this package ships (see
+        ``infrastructure.db.schema_reflection``) — accurate as long as the
+        live Catalyst project was actually provisioned to match those files.
+        That is a real limitation, not a fallback pretending to be equivalent
+        to live introspection; see ``docs/deployment/catalyst-schema.md``.
+        """
+        from ..db.schema_reflection import schema_columns
+
+        return list(schema_columns().get(table, []))
 
     # ---------------------------------------------------------------- HTTP
     def _zcql(self, statement: str) -> list[dict[str, Any]]:
@@ -248,6 +294,103 @@ class CatalystDataStore:
 
 
 # ------------------------------------------------------------- SQL parsing
+
+
+@dataclass(slots=True)
+class UpsertPlan:
+    """A parsed ``INSERT … ON CONFLICT`` ready to run as read-then-write."""
+
+    table: str
+    values: dict[str, Any]
+    conflict_columns: list[str]
+    #: Column -> either a literal value or the sentinel ``EXCLUDED`` marker.
+    updates: dict[str, Any]
+
+    def resolved_updates(self) -> dict[str, Any]:
+        """Resolve ``excluded.col`` references against the incoming row."""
+        resolved: dict[str, Any] = {}
+        for column, value in self.updates.items():
+            if isinstance(value, _Excluded):
+                if value.column not in self.values:
+                    raise CIPError(
+                        "ON CONFLICT update references an excluded column that is not in the INSERT",
+                        column=value.column,
+                    )
+                resolved[column] = self.values[value.column]
+            else:
+                resolved[column] = value
+        return resolved
+
+
+@dataclass(frozen=True, slots=True)
+class _Excluded:
+    """Marker for an ``excluded.<column>`` reference in a DO UPDATE SET."""
+
+    column: str
+
+
+def _find_top_level(statement: str, needle: str) -> int:
+    """Index of ``needle`` (case-insensitive) outside any string literal."""
+    upper = statement.upper()
+    target = needle.upper()
+    inside = False
+    index = 0
+    while index < len(statement):
+        char = statement[index]
+        if char == "\\" and inside:
+            index += 2
+            continue
+        if char == "'":
+            inside = not inside
+        elif not inside and upper.startswith(target, index):
+            return index
+        index += 1
+    return -1
+
+
+def _parse_upsert(statement: str) -> UpsertPlan | None:
+    """Parse ``INSERT … ON CONFLICT (…) DO {NOTHING|UPDATE SET …}``.
+
+    Returns ``None`` for a plain INSERT so the caller keeps the fast path.
+    """
+    marker = _find_top_level(statement, " ON CONFLICT")
+    if marker < 0:
+        return None
+
+    insert_part = statement[:marker]
+    table, values = _parse_insert(insert_part)
+
+    remainder = statement[marker:].lstrip()[len("ON CONFLICT"):].lstrip()
+
+    if not remainder.startswith("("):
+        raise CIPError("ON CONFLICT requires an explicit column list", sql=statement[:160])
+    close = remainder.index(")")
+    conflict_columns = [part.strip().strip('"') for part in remainder[1:close].split(",") if part.strip()]
+    if not conflict_columns:
+        raise CIPError("ON CONFLICT column list is empty", sql=statement[:160])
+
+    action = remainder[close + 1:].strip()
+    upper_action = action.upper()
+    if upper_action.startswith("DO NOTHING"):
+        return UpsertPlan(table=table, values=values, conflict_columns=conflict_columns, updates={})
+    if not upper_action.startswith("DO UPDATE SET"):
+        raise CIPError("Unsupported ON CONFLICT action", sql=statement[:160])
+
+    set_clause = action[len("DO UPDATE SET"):].strip()
+    updates: dict[str, Any] = {}
+    for assignment in _split_top_level(set_clause):
+        if "=" not in assignment:
+            raise CIPError("Malformed ON CONFLICT assignment", assignment=assignment[:80])
+        column, _, raw = assignment.partition("=")
+        column = column.strip().strip('"')
+        raw = raw.strip()
+        if raw.lower().startswith("excluded."):
+            updates[column] = _Excluded(raw.split(".", 1)[1].strip().strip('"'))
+        else:
+            updates[column] = _literal_to_python(raw)
+    if not updates:
+        raise CIPError("ON CONFLICT DO UPDATE has no assignments", sql=statement[:160])
+    return UpsertPlan(table=table, values=values, conflict_columns=conflict_columns, updates=updates)
 
 
 def _parse_insert(statement: str) -> tuple[str, dict[str, Any]]:

@@ -135,9 +135,57 @@ class HotspotRequest(BaseModel):
 
 class SociologyRequest(BaseModel):
     dimension: Literal["occupation", "age_band", "gender", "religion", "caste"] = "occupation"
+    subject: Literal["complainant", "victim"] = "complainant"
     district_ids: list[int] = Field(default_factory=list)
     date_from: date | None = None
     date_to: date | None = None
+
+
+class SocioEconomicRequest(BaseModel):
+    census_year: int = Field(default=2011)
+    crime_sub_head_ids: list[int] = Field(default_factory=list)
+    date_from: date | None = None
+    date_to: date | None = None
+
+
+class SeasonalityRequest(BaseModel):
+    district_ids: list[int] = Field(default_factory=list)
+    unit_ids: list[int] = Field(default_factory=list)
+    crime_sub_head_ids: list[int] = Field(default_factory=list)
+    date_from: date | None = None
+    date_to: date | None = None
+
+
+class ForecastRequest(BaseModel):
+    """Aggregate forecast filters.
+
+    There is deliberately no person, accused or identity field. Forecasting is
+    an area × crime-type capability, and leaving the individual out of the
+    request schema is the cheapest way to keep it that way.
+    """
+
+    district_ids: list[int] = Field(default_factory=list)
+    unit_ids: list[int] = Field(default_factory=list)
+    crime_sub_head_ids: list[int] = Field(default_factory=list)
+    date_from: date | None = None
+    date_to: date | None = None
+    horizon_months: int = Field(default=3, ge=1, le=12)
+
+
+class SpatioTemporalForecastRequest(BaseModel):
+    district_ids: list[int] = Field(default_factory=list)
+    unit_ids: list[int] = Field(default_factory=list)
+    crime_sub_head_ids: list[int] = Field(default_factory=list)
+    horizon_days: int = Field(default=30, ge=7, le=90)
+    historical_days: int = Field(default=180, ge=30, le=730)
+
+
+class EventComparisonRequest(BaseModel):
+    event_id: str | None = None
+    event_name: str | None = None
+    district_ids: list[int] = Field(default_factory=list)
+    crime_sub_head_ids: list[int] = Field(default_factory=list)
+    comparison_window_count: int = Field(default=4, ge=2, le=12)
 
 
 class GraphExpandRequest(BaseModel):

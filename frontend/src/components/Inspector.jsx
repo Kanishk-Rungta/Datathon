@@ -318,7 +318,7 @@ function NetworkTab() {
         </div>
       )}
 
-      {financial?.transactions?.length > 0 && (
+      {financial?.transaction_count > 0 && (
         <div className="panel">
           <div className="panel__head">
             <h3 className="panel__title">Recorded transfers</h3>
@@ -337,9 +337,89 @@ function NetworkTab() {
               ))}
             </tbody>
           </table>
+
+          {financial.chains?.length > 0 && (
+            <>
+              <h4 className="panel__subtitle">Onward movement</h4>
+              {financial.chains.slice(0, 3).map((chain) => (
+                <div className="flow-chain" key={chain.txn_ids.join('-')}>
+                  <div className="flow-chain__path">{chain.path.join(' → ')}</div>
+                  <div className="flow-chain__meta">
+                    {chain.hops} hop{chain.hops === 1 ? '' : 's'} · {chain.start_date} to {chain.end_date}
+                    {' · '}{formatRupees(chain.amounts[0])} first, {formatRupees(chain.amounts[chain.amounts.length - 1])} last
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+
+          {financial.concentrations?.length > 0 && (
+            <>
+              <h4 className="panel__subtitle">Counterparty concentration</h4>
+              <table className="table">
+                <thead><tr><th>Account</th><th>Direction</th><th>Counterparties</th><th>Total</th></tr></thead>
+                <tbody>
+                  {financial.concentrations.slice(0, 5).map((spot) => (
+                    <tr key={`${spot.label}-${spot.direction}`}>
+                      <td>{spot.label}</td>
+                      <td>{spot.direction}</td>
+                      <td className="num">{spot.counterparty_count}</td>
+                      <td className="num">{formatRupees(spot.total_amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="panel__note">
+                At or above the {financial.concentrations[0].percentile}th percentile of this dataset
+                ({financial.concentrations[0].threshold_degree} counterparties).
+              </div>
+            </>
+          )}
+
+          {financial.bursts?.length > 0 && (
+            <>
+              <h4 className="panel__subtitle">Days above the account&apos;s own norm</h4>
+              <table className="table">
+                <thead><tr><th>Account</th><th>Day</th><th>Transfers</th><th>Baseline</th><th>z</th></tr></thead>
+                <tbody>
+                  {financial.bursts.slice(0, 5).map((burst) => (
+                    <tr key={`${burst.label}-${burst.day}`}>
+                      <td>{burst.label}</td>
+                      <td>{burst.day}</td>
+                      <td className="num">{burst.transactions}</td>
+                      <td className="num">{burst.baseline_mean}</td>
+                      <td className="num">{burst.z_score}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+
+          {financial.amount_bands?.some((band) => band.count > 0) && (
+            <>
+              <h4 className="panel__subtitle">Amounts against the reporting threshold</h4>
+              <table className="table">
+                <thead><tr><th>Band</th><th>Transfers</th><th>Total</th></tr></thead>
+                <tbody>
+                  {financial.amount_bands.filter((band) => band.count > 0).map((band) => (
+                    <tr key={band.label}>
+                      <td>{band.label}</td>
+                      <td className="num">{band.count}</td>
+                      <td className="num">{formatRupees(band.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+
           <div className="notice">
             The FIR schema holds no financial records. These rows are a clearly marked synthetic extension.
           </div>
+          {financial.interpretation_notice && (
+            <div className="notice">{financial.interpretation_notice}</div>
+          )}
         </div>
       )}
     </>

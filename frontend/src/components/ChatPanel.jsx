@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnswerBody, TraceList } from './AnswerBody.jsx'
+import { api } from '../lib/api.js'
 
 const SUGGESTIONS_EN = [
   'What are the crime trends in Mysuru this year?',
@@ -66,12 +67,112 @@ function useSpeechRecognition(language, onResult) {
   }
 }
 
+/* Playback for a synthesised answer.
+ *
+ * The audio lives behind `/files/`, which authorizes the caller, so it is
+ * fetched with the bearer token and handed to the player as a blob rather than
+ * set as a plain `src` the browser would request unauthenticated. The object
+ * URL is revoked on unmount so a long session does not leak blobs. */
+function AnswerAudio({ url }) {
+  const [objectUrl, setObjectUrl] = useState(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let revoked = null
+    let cancelled = false
+    api.fetchBlobUrl(url)
+      .then((blobUrl) => {
+        if (cancelled) { URL.revokeObjectURL(blobUrl); return }
+        revoked = blobUrl
+        setObjectUrl(blobUrl)
+      })
+      .catch(() => { if (!cancelled) setFailed(true) })
+    return () => {
+      cancelled = true
+      if (revoked) URL.revokeObjectURL(revoked)
+    }
+  }, [url])
+
+  // A missing recording must not imply a missing answer.
+  if (failed) return <span className="pill">spoken answer unavailable</span>
+  if (!objectUrl) return <span className="pill">preparing audio…</span>
+  return <audio controls preload="none" src={objectUrl} className="turn__audio" />
+}
+
+/* Live server-side dictation.
+ *
+ * Used only when the deployment reports a full-fidelity speech provider. On
+ * any failure it reports back so the caller can fall through to the browser's
+ * own recogniser, which needs no server and works offline — a speech outage
+ * should cost fidelity, never the ability to dictate at all. */
+function useStreamingDictation(language, { onPartial, onFinal, onUnavailable }) {
+  const sessionRef = useRef(null)
+  const [listening, setListening] = useState(false)
+
+  const stop = useCallback(() => {
+    sessionRef.current?.recorder?.stop()
+    sessionRef.current?.stream?.getTracks().forEach((track) => track.stop())
+    sessionRef.current?.socket?.stop()
+    sessionRef.current = null
+    setListening(false)
+  }, [])
+
+  const start = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      const socket = api.streamAsr({
+        language,
+        mimeType: 'audio/webm',
+        onPartial,
+        onFinal: (text) => { onFinal?.(text); stop() },
+        onError: (message) => { stop(); onUnavailable?.(message) },
+      })
+      recorder.ondataavailable = async (event) => {
+        if (event.data?.size) socket.send(await event.data.arrayBuffer())
+      }
+      // Emit roughly every half second so partials feel live.
+      recorder.start(500)
+      sessionRef.current = { stream, recorder, socket }
+      setListening(true)
+    } catch {
+      onUnavailable?.('Microphone access was refused.')
+    }
+  }, [language, onPartial, onFinal, onUnavailable, stop])
+
+  useEffect(() => stop, [stop])
+  return { listening, start, stop }
+}
+
 export default function ChatPanel({
   turns, busy, error, language, onLanguageChange, onSend, onSelectEvidence, activeLocator, onExport,
+  serverSpeech = false,
 }) {
   const [draft, setDraft] = useState('')
   const scrollRef = useRef(null)
-  const speech = useSpeechRecognition(language, (text) => setDraft((current) => (current ? `${current} ${text}` : text)))
+  const appendToDraft = useCallback(
+    (text) => setDraft((current) => (current ? `${current} ${text}` : text)),
+    [],
+  )
+  const speech = useSpeechRecognition(language, appendToDraft)
+
+  /* Server dictation is preferred when the deployment has a real provider,
+     because the browser recogniser handles Kannada poorly. If it drops out we
+     fall back rather than leaving the officer with no microphone at all. */
+  const [serverSpeechDown, setServerSpeechDown] = useState(false)
+  const [interim, setInterim] = useState('')
+  const dictation = useStreamingDictation(language, {
+    onPartial: setInterim,
+    onFinal: (text) => { setInterim(''); if (text) appendToDraft(text) },
+    onUnavailable: () => { setInterim(''); setServerSpeechDown(true) },
+  })
+  const useServer = serverSpeech && !serverSpeechDown
+  const micActive = useServer ? dictation.listening : speech.listening
+  const micAvailable = useServer || speech.supported
+  const toggleMic = () => {
+    if (useServer) { dictation.listening ? dictation.stop() : dictation.start() }
+    else speech.toggle()
+  }
 
   useEffect(() => {
     const element = scrollRef.current
@@ -128,6 +229,7 @@ export default function ChatPanel({
                   <span>{turn.answer.evidence?.length || 0} evidence records</span>
                   <TraceList traces={turn.answer.traces} />
                 </div>
+                {turn.answer.audio_url && <AnswerAudio url={turn.answer.audio_url} />}
               </>
             )}
           </div>
@@ -153,15 +255,20 @@ export default function ChatPanel({
             onKeyDown={handleKeyDown}
             rows={1}
           />
-          {speech.supported && (
+          {interim && (
+            <div className="composer__interim" title="Live transcript — not yet inserted">
+              {interim}
+            </div>
+          )}
+          {micAvailable && (
             <button
               type="button"
-              className={`btn btn--ghost btn--mic${speech.listening ? ' btn--recording' : ''}`}
-              onClick={speech.toggle}
-              title={speech.listening ? 'Stop dictation' : 'Dictate your question'}
+              className={`btn btn--ghost btn--mic${micActive ? ' btn--recording' : ''}`}
+              onClick={toggleMic}
+              title={micActive ? 'Stop dictation' : (useServer ? 'Dictate (server speech)' : 'Dictate your question')}
               aria-label="Voice input"
             >
-              {speech.listening ? '◼' : '🎙'}
+              {micActive ? '◼' : '🎙'}
             </button>
           )}
           <button type="button" className="btn" onClick={submit} disabled={busy || !draft.trim()}>

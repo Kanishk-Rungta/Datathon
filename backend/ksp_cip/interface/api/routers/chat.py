@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-import base64
+import hashlib
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, UploadFile, File, Form
 
 from ....application.agents import TurnRequest
 from ....domain.enums import Language
+from ....domain.errors import ValidationError
 from ....domain.models import Answer
 from ..deps import ContainerDep, PrincipalDep
 from ..schemas import (
@@ -23,6 +25,23 @@ from ..schemas import (
 )
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+
+def audio_key(user_id: str, session_id: str, text: str) -> str:
+    """Object key for synthesised speech: ``audio/<user_id>/<session>/<hash>.wav``.
+
+    Two properties this must have, both of which the previous
+    ``audio/<session_id>/...`` form lacked:
+
+    * **The first segment is the owner.** ``authorize_file_access`` attributes a
+      file by that segment and refuses to serve a key it cannot attribute, so a
+      session-keyed object was unreadable by the very user who requested it.
+    * **The digest is stable across processes.** ``hash()`` is salted per
+      interpreter (PYTHONHASHSEED), so the same answer produced a different key
+      on every restart and re-synthesised audio that already existed.
+    """
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return f"audio/{user_id}/{quote(session_id, safe='')}/{digest}.wav"
 
 
 def to_response(answer: Answer, session_id: str) -> AnswerResponse:
@@ -83,7 +102,7 @@ def chat(payload: ChatRequest, principal: PrincipalDep, container: ContainerDep)
     if payload.want_audio and answer.language is not Language.ENGLISH:
         audio = container.language.synthesize(answer.answer_text_display, language=answer.language)
         if audio:
-            key = f"audio/{payload.session_id}/{abs(hash(answer.answer_text_display)) & 0xFFFFFFFF:08x}.wav"
+            key = audio_key(principal.user_id, payload.session_id, answer.answer_text_display)
             container.filestore.write_bytes(key, audio, content_type="audio/wav")
             answer.audio_url = container.filestore.url_for(key)
     return to_response(answer, payload.session_id)
@@ -124,9 +143,35 @@ async def transcribe(
     The browser's Web Speech API handles voice locally and is the default. This
     endpoint exists for deployments where server-side ASR is required, and it
     tells the caller honestly when no real ASR provider is configured.
+
+    Uploads are bounded before anything reads them: the request body is an
+    untrusted, attacker-controllable size, and the transcript is the only thing
+    kept — raw audio is never persisted here.
     """
-    payload = await audio.read()
-    target = Language(language)
+    try:
+        target = Language(language)
+    except ValueError:
+        raise ValidationError(
+            f"'{language}' is not a language this platform transcribes. Use 'kn' or 'en'.",
+            field="language",
+        ) from None
+
+    ceiling = container.settings.voice_max_audio_bytes
+    # Read one byte past the ceiling: enough to detect an oversized upload
+    # without pulling the whole of it into a bytes object, and without trusting
+    # a client-supplied Content-Length. Starlette has already received and
+    # spooled the body by this point (to disk above ~1 MB), so this bounds what
+    # the handler and the provider hold, not what the socket accepted —
+    # rejecting earlier than this needs a server or proxy body limit.
+    payload = await audio.read(ceiling + 1)
+    if len(payload) > ceiling:
+        raise ValidationError(
+            f"Audio exceeds the {ceiling}-byte limit for a single utterance.",
+            field="audio",
+        )
+    if not payload:
+        raise ValidationError("No audio was uploaded.", field="audio")
+
     text = container.language.transcribe(
         payload, language=target, mime_type=audio.content_type or "audio/webm"
     )

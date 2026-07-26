@@ -1,8 +1,9 @@
 /* AppSail static host for the console.
  *
  * Only two responsibilities: serve `frontend/dist`, and forward `/api` to the
- * function so the browser sees a single origin. Anything else belongs in the
- * backend, not here.
+ * cip-api AppSail service (see docs/deployment/catalyst-runtime.md for why
+ * this is an AppSail service and not a Function) so the browser sees a single
+ * origin. Anything else belongs in the backend, not here.
  */
 const http = require('http')
 const https = require('https')
@@ -30,7 +31,11 @@ http.createServer((req, res) => {
       return
     }
     const target = new URL(req.url, API_TARGET)
-    const proxied = https.request(target, { method: req.method, headers: req.headers }, (upstream) => {
+    // An internal AppSail-to-AppSail call is not guaranteed to be TLS the way
+    // a public endpoint is, so the client module must match the target's own
+    // scheme rather than always assuming https.
+    const client = target.protocol === 'http:' ? http : https
+    const proxied = client.request(target, { method: req.method, headers: req.headers }, (upstream) => {
       res.writeHead(upstream.statusCode, upstream.headers)
       upstream.pipe(res)
     })

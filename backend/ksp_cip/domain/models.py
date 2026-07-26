@@ -112,9 +112,23 @@ class ComputationTrace(DomainModel):
 
 
 class StructuredPayload(DomainModel):
-    """Chart/graph/table spec consumed directly by the React client."""
+    """Chart/graph/table spec consumed directly by the React client.
 
-    payload_type: Literal["none", "line", "bar", "heatmap", "graph", "table", "timeline", "score", "map"] = "none"
+    ``payload_type`` is a closed set on purpose: it is the contract between the
+    agents and ``PayloadView.jsx``, and a typo here should fail loudly at the
+    agent rather than render as an empty panel in the console.
+
+    The cost of that strictness is that **adding a renderer means adding it
+    here too**. A payload type the console can draw but this list rejects makes
+    the whole answer raise, turning a cosmetic gap into a 500 — which is how
+    ``socioeconomic_correlation`` came to break every `SOCIOECONOMIC_QUERY`
+    turn. `test_payload_contract.py` now pins the two lists together.
+    """
+
+    payload_type: Literal[
+        "none", "line", "bar", "heatmap", "graph", "table", "timeline", "score", "map",
+        "early_warning", "forecast", "spatiotemporal_forecast", "socioeconomic_correlation",
+    ] = "none"
     title: str = ""
     data: dict[str, Any] = Field(default_factory=dict)
 

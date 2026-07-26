@@ -40,7 +40,11 @@ export default function App() {
     setBusy(true)
     setError(null)
     try {
-      const answer = await api.chat(message, sessionId, language)
+      // Spoken answers are only meaningful in Kannada here, and only when the
+      // deployment actually has a speech provider — asking otherwise would add
+      // a round trip that always returns nothing.
+      const wantAudio = language === 'kn' && Boolean(capabilities?.language_full_fidelity)
+      const answer = await api.chat(message, sessionId, language, {}, wantAudio)
       setTurns((current) => [...current, { role: 'agent', answer }])
       setActiveLocator(answer.evidence?.[0]?.locator || null)
     } catch (err) {
@@ -48,7 +52,7 @@ export default function App() {
     } finally {
       setBusy(false)
     }
-  }, [sessionId, language])
+  }, [sessionId, language, capabilities])
 
   const exportPdf = useCallback(async () => {
     try {
@@ -89,6 +93,7 @@ export default function App() {
           onSelectEvidence={setActiveLocator}
           activeLocator={activeLocator}
           onExport={exportPdf}
+          serverSpeech={Boolean(capabilities?.language_full_fidelity)}
         />
         <Inspector
           answer={lastAnswer}

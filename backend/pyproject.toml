@@ -23,6 +23,7 @@ testpaths = ["tests"]
 addopts = "-q --strict-markers"
 markers = [
   "slow: seeds a full synthetic dataset",
+  "deployment: talks to a real, explicitly-configured Catalyst project; skipped unless opted in",
 ]
 filterwarnings = ["ignore::DeprecationWarning"]
 

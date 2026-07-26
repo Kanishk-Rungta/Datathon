@@ -61,8 +61,10 @@ computed" panel showing the query, the parameters and the formula.
 Capabilities: FIR retrieval and semantic similar-case search · trend analysis ·
 geographic hotspots · statistical early warning · sociological breakdowns ·
 link analysis with entity resolution · recorded-offence-history scoring ·
-money-flow analysis (synthetic extension) · case briefings with timelines and
-a transparent Investigation Priority Indicator · PDF export · full audit trail.
+money-flow analysis with onward-transfer chains, counterparty concentration,
+per-account activity bursts and network position (synthetic extension) ·
+case briefings with timelines and a transparent Investigation Priority
+Indicator · PDF export · full audit trail.
 
 ---
 
@@ -141,6 +143,7 @@ append-only audit trail.
 | [ADR-0004](docs/adr/0004-persistence-ports-and-adapters.md) | Ports, adapters, SQLite/Catalyst |
 | [ADR-0005](docs/adr/0005-synthetic-financial-extension.md) | Financial data as a marked extension |
 | [ADR-0006](docs/adr/0006-analytics-are-computed-not-prompted.md) | Every figure is arithmetic |
+| [Voice](docs/voice-ai4bharat.md) | Self-hosted Kannada ASR/TTS, degradation rules, audio ownership |
 
 API documentation is served at `/api/v1/docs`.
 
@@ -149,14 +152,15 @@ API documentation is served at `/api/v1/docs`.
 ## Tests
 
 ```bash
-scripts/test.sh                  # 201 tests
+scripts/test.sh                  # 402 tests
 scripts/test.sh -m "not slow"    # unit tests only, seconds
 ```
 
 The generator plants known signals — a surge, three hotspots, a network ring
-with transliteration variants — and records them in a manifest. Integration
-tests assert the analytics find them again. Without that loop, analytics over
-synthetic data would prove nothing.
+with transliteration variants, and a one-day spike of transfers on one account
+— and records them in a manifest. Integration tests assert the analytics find
+them again. Without that loop, analytics over synthetic data would prove
+nothing.
 
 ---
 
@@ -177,8 +181,12 @@ tests. It has **not** been run against a live Catalyst project in this build.
 
 ## Honest limitations
 
-- Kannada is an offline glossary unless Bhashini credentials are configured.
-  The platform reports this rather than implying full translation.
+- Kannada is an offline glossary unless a speech provider is configured —
+  either Bhashini, or the self-hosted AI4Bharat service in `speech-service/`,
+  which needs hardware rather than credentials. The platform reports which one
+  answered rather than implying full translation. The AI4Bharat path is wired
+  and tested end to end, but its model calls have not been run against the real
+  weights, and there is no benchmark yet on policing vocabulary.
 - NetworkX holds the graph in memory — right for this scale, not statewide.
 - Grid binning is coarser than kernel density; a cell boundary can split one
   real concentration in two, and the answer says so.

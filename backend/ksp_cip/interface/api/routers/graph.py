@@ -209,23 +209,72 @@ def financial(
 
     summary = FinancialAnalyzer().summarize(
         subject_ref=refs[0] if refs else "",
+        # All of the identity's source rows, not just the first: a transfer may
+        # be recorded against any row that resolved to this person.
+        subject_refs=refs,
         subject_label=str(identity["canonical_name"]),
         transactions=transactions,
+        # Chains, concentration and broker position are neighbourhood
+        # properties; the subject's own rows alone cannot show them.
+        network_transactions=container.financial.neighbourhood(
+            sorted({str(t["from_ref"]) for t in transactions}
+                   | {str(t["to_ref"]) for t in transactions})
+        ),
     )
     return {
         "subject": summary.subject_label,
         "total_sent": summary.total_sent,
         "total_received": summary.total_received,
+        # `transaction_count` is what the console gates its panel on. It used
+        # to look for a `transactions` key that this endpoint never returned,
+        # so the panel silently never rendered.
+        "transaction_count": len(summary.transactions),
         "counterparties": [
-            {"label": f.label, "kind": f.kind, "sent": f.sent, "received": f.received,
-             "net": f.net, "transactions": f.txn_count}
+            {"ref": f.ref, "label": f.label, "kind": f.kind, "sent": f.sent,
+             "received": f.received, "net": f.net, "txn_count": f.txn_count}
             for f in summary.counterparties
         ],
         "patterns": summary.patterns,
+        "chains": [
+            {"hops": c.hops, "path": c.path, "amounts": c.amounts,
+             "start_date": c.start_date, "end_date": c.end_date,
+             "amount_ratio": c.amount_ratio,
+             "txn_ids": c.txn_ids, "case_master_ids": c.case_ids}
+            for c in summary.chains
+        ],
+        "concentrations": [
+            {"label": c.label, "kind": c.kind, "direction": c.direction,
+             "counterparty_count": c.counterparty_count, "transactions": c.txn_count,
+             "total_amount": c.total_amount, "threshold_degree": c.threshold_degree,
+             "percentile": c.percentile}
+            for c in summary.concentrations
+        ],
+        "amount_bands": [
+            {"label": b.label, "lower": b.lower, "upper": b.upper,
+             "count": b.count, "total": b.total,
+             "share": b.share_of(len(summary.transactions))}
+            for b in summary.amount_bands
+        ],
+        "bursts": [
+            {"label": b.label, "day": b.day, "transactions": b.txn_count, "amount": b.amount,
+             "baseline_mean": b.baseline_mean, "z_score": b.z_score,
+             "baseline_days": b.baseline_days}
+            for b in summary.bursts
+        ],
+        "network_positions": [
+            {"label": p.label, "kind": p.kind, "degree": p.degree,
+             "degree_centrality": p.degree_centrality, "betweenness": p.betweenness}
+            for p in summary.positions
+        ],
         "case_master_ids": summary.case_ids,
         "is_synthetic_extension": True,
         "notice": (
             "Financial records are a clearly marked synthetic extension. The organiser's FIR schema "
             "contains no transaction data, so nothing here reflects real banking activity."
+        ),
+        "interpretation_notice": (
+            "Chains, concentration, bursts and network position describe shapes in the recorded "
+            "transfers. They are arithmetic observations, not findings of wrongdoing, and they "
+            "describe accounts and their positions rather than the conduct of any person."
         ),
     }

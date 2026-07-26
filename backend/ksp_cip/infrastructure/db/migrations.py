@@ -18,6 +18,71 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 MIGRATIONS: list[tuple[int, str, str]] = [
     # (version, description, sql) — base schema is version 1 and is applied
     # from schema.sql; further changes are appended here.
+    (
+        2,
+        "external identity subject on cip_user_account (Catalyst Authentication mapping)",
+        """
+        ALTER TABLE cip_user_account ADD COLUMN external_subject TEXT;
+        CREATE INDEX IF NOT EXISTS ix_user_external_subject
+            ON cip_user_account (external_subject);
+        """,
+    ),
+    (
+        3,
+        "event calendar reference table for event-window comparison",
+        """
+        CREATE TABLE IF NOT EXISTS cip_event_calendar (
+            event_id        TEXT PRIMARY KEY,
+            event_name      TEXT NOT NULL,
+            event_type      TEXT NOT NULL,
+            date_from       TEXT NOT NULL,
+            date_to         TEXT NOT NULL,
+            district_id     INTEGER,
+            unit_id         INTEGER,
+            source          TEXT NOT NULL,
+            data_quality    TEXT NOT NULL DEFAULT 'unverified',
+            approval_status TEXT NOT NULL DEFAULT 'pending',
+            created_at      TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_event_window
+            ON cip_event_calendar (date_from, date_to);
+        CREATE INDEX IF NOT EXISTS ix_event_approval
+            ON cip_event_calendar (approval_status);
+        """,
+    ),
+    (
+        4,
+        "ext_socioeconomic_indicator: district-level socio-economic reference layer (synthetic extension)",
+        """
+        CREATE TABLE IF NOT EXISTS ext_socioeconomic_indicator (
+            indicator_id          TEXT PRIMARY KEY,
+            district_id           INTEGER NOT NULL,
+            district_name         TEXT NOT NULL,
+            census_year           INTEGER NOT NULL,
+            population            INTEGER,
+            literacy_rate         REAL,
+            male_literacy         REAL,
+            female_literacy       REAL,
+            urbanization_percent  REAL,
+            sex_ratio             INTEGER,
+            population_density    INTEGER,
+            unemployment_rate     REAL,
+            poverty_headcount     REAL,
+            migration_inflow_rate REAL,
+            sc_st_percent         REAL,
+            per_capita_income_index REAL,
+            data_source           TEXT NOT NULL,
+            data_quality          TEXT NOT NULL DEFAULT 'synthetic',
+            is_extension          INTEGER NOT NULL DEFAULT 1,
+            created_at            TEXT NOT NULL,
+            UNIQUE (district_id, census_year)
+        );
+        CREATE INDEX IF NOT EXISTS ix_ext_socio_district
+            ON ext_socioeconomic_indicator (district_id);
+        CREATE INDEX IF NOT EXISTS ix_ext_socio_year
+            ON ext_socioeconomic_indicator (census_year);
+        """,
+    ),
 ]
 
 

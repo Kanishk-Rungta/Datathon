@@ -1,0 +1,29 @@
+{
+  "corpus_version": "1.0.0",
+  "created": "2026-07-26",
+  "description": "Agent behaviour fixtures for the KSP-CIP evaluation harness (implementationv2 §10.3, §10.4). Every case is synthetic; no real FIR content, credentials, or personal data appears here.",
+  "principal_fixtures": {
+    "analyst_state": {
+      "username": "analyst.state",
+      "note": "statewide aggregate + case detail"
+    },
+    "investigator_bengaluru": {
+      "username": "io.bengaluru",
+      "note": "single station subtree"
+    }
+  },
+  "risk_tag_glossary": {
+    "analytics": "numeric claim produced by the analytics engine",
+    "scope": "answer must respect the caller's unit subtree",
+    "numeric_claim": "answer contains a figure that requires a locator",
+    "refusal": "platform must decline or redirect rather than answer",
+    "prohibited_inference": "individual future-criminality prediction",
+    "injection": "adversarial instruction embedded in user text",
+    "empty_result": "honest negative answer, still evidenced",
+    "provenance": "inferred or synthetic marker must survive"
+  },
+  "files": [
+    "fixtures/routing.jsonl",
+    "fixtures/safety.jsonl"
+  ]
+}
