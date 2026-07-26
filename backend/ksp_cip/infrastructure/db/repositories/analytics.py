@@ -13,7 +13,7 @@ from typing import Any, Sequence
 
 from ....domain.models import UnitScope
 from ....domain.ports import DataStore
-from .cases import in_clause
+from .cases import MATCH_NOTHING, in_clause
 
 
 @dataclass(slots=True)
@@ -128,7 +128,7 @@ class AnalyticsRepository:
         if not scope.statewide:
             allowed = sorted(scope.unit_ids)
             if not allowed:
-                return " WHERE 1 = 0", {}
+                return MATCH_NOTHING, {}
             fragment, scope_params = in_clause("scope_u", allowed)
             clauses.append(f"c.PoliceStationID IN ({fragment})")
             params.update(scope_params)

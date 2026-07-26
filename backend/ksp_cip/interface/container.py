@@ -170,7 +170,9 @@ def build_container(settings: Settings | None = None) -> Container:
     filestore = _build_filestore(settings)
 
     reference = ReferenceRepository(store)
-    cases = CaseRepository(store)
+    # Cases resolve their display labels from the reference cache rather than
+    # joining eight lookup tables -- see CaseRepository's docstring.
+    cases = CaseRepository(store, reference)
     analytics = AnalyticsRepository(store)
     graph_repository = GraphRepository(store)
     embeddings = EmbeddingRepository(store)
