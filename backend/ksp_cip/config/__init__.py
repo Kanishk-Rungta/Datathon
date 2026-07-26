@@ -1,6 +1,10 @@
 from .settings import (
+    CacheBackend,
     DataStoreBackend,
     Environment,
+    FileStoreBackend,
+    IdentityBackend,
+    KeyValueBackend,
     LLMProviderName,
     LanguageProviderName,
     Settings,
@@ -8,6 +12,7 @@ from .settings import (
 )
 
 __all__ = [
-    "DataStoreBackend", "Environment", "LLMProviderName", "LanguageProviderName",
+    "CacheBackend", "DataStoreBackend", "Environment", "FileStoreBackend",
+    "IdentityBackend", "KeyValueBackend", "LLMProviderName", "LanguageProviderName",
     "Settings", "get_settings",
 ]

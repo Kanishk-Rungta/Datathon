@@ -12,3 +12,8 @@ build/
 *.log
 .DS_Store
 Thumbs.db
+# Test/run artifacts (landing batches are tracked; these are not)
+backend/var/filestore/exports/
+backend/var/filestore/audio/
+*.db-shm
+*.db-wal

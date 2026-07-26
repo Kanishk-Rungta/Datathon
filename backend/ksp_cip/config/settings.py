@@ -39,6 +39,45 @@ class DataStoreBackend(StrEnum):
     CATALYST = "catalyst"
 
 
+class FileStoreBackend(StrEnum):
+    """Which implementation of the :class:`FileStore` port is bound.
+
+    Deliberately a separate switch from :class:`DataStoreBackend`: a Catalyst
+    deployment that left exports on the function filesystem would lose them at
+    the next cold start, so this is something a deployment must state, not
+    inherit.
+    """
+
+    LOCAL = "local"
+    CATALYST = "catalyst"
+
+
+class KeyValueBackend(StrEnum):
+    """Session/scratch document store: relational locally, NoSQL on Catalyst."""
+
+    RELATIONAL = "relational"
+    CATALYST = "catalyst"
+
+
+class CacheBackend(StrEnum):
+    """Replaceable-data cache. Never the source of truth for anything."""
+
+    MEMORY = "memory"
+    CATALYST = "catalyst"
+
+
+class IdentityBackend(StrEnum):
+    """Who authenticates a user.
+
+    ``LOCAL`` issues the platform's own HS256 tokens against demo accounts and
+    exists for zero-credential development. ``CATALYST`` verifies tokens issued
+    by Catalyst Authentication and maps them onto the same ``Principal``.
+    """
+
+    LOCAL = "local"
+    CATALYST = "catalyst"
+
+
 class LLMProviderName(StrEnum):
     """Reasoning/paraphrase providers behind the LLM Gateway.
 
@@ -76,6 +115,10 @@ class Settings(BaseSettings):
 
     # ------------------------------------------------------------------ store
     datastore_backend: DataStoreBackend = DataStoreBackend.SQLITE
+    filestore_backend: FileStoreBackend = FileStoreBackend.LOCAL
+    keyvalue_backend: KeyValueBackend = KeyValueBackend.RELATIONAL
+    cache_backend: CacheBackend = CacheBackend.MEMORY
+    identity_backend: IdentityBackend = IdentityBackend.LOCAL
     sqlite_path: Path = Field(default=BACKEND_ROOT / "var" / "ksp_cip.db")
     filestore_root: Path = Field(default=BACKEND_ROOT / "var" / "filestore")
     sqlite_timeout_seconds: float = 30.0
@@ -89,6 +132,13 @@ class Settings(BaseSettings):
     catalyst_oauth_client_secret: str | None = None
     catalyst_accounts_url: str = "https://accounts.zoho.in"
     catalyst_stratus_bucket: str = "cip-ingest"
+    catalyst_nosql_table: str = "cip_kv"
+    catalyst_cache_segment: str | None = None
+    catalyst_cache_ttl_seconds: int = 3600
+    #: Issuer/audience a Catalyst Authentication token must declare. Left unset
+    #: locally; required before the Catalyst identity backend will start.
+    catalyst_auth_issuer: str | None = None
+    catalyst_auth_audience: str | None = None
 
     # -------------------------------------------------------------------- llm
     llm_provider: LLMProviderName = LLMProviderName.LOCAL
@@ -156,6 +206,72 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment is Environment.PRODUCTION
+
+    @property
+    def uses_catalyst(self) -> bool:
+        """True when any port is bound to a Catalyst-hosted implementation."""
+        return (
+            self.datastore_backend is DataStoreBackend.CATALYST
+            or self.filestore_backend is FileStoreBackend.CATALYST
+            or self.keyvalue_backend is KeyValueBackend.CATALYST
+            or self.cache_backend is CacheBackend.CATALYST
+            or self.identity_backend is IdentityBackend.CATALYST
+        )
+
+    def deployment_problems(self) -> list[str]:
+        """Configuration errors that must stop startup, as plain sentences.
+
+        Returned rather than raised so a health endpoint can report all of them
+        at once instead of revealing them one restart at a time. Nothing here
+        echoes a secret value — only the name of the setting that is missing.
+        """
+        problems: list[str] = []
+
+        if self.uses_catalyst and not self.catalyst_project_id:
+            problems.append("KSPCIP_CATALYST_PROJECT_ID must be set when any Catalyst backend is selected")
+
+        if self.datastore_backend is DataStoreBackend.CATALYST:
+            for name, value in (
+                ("KSPCIP_CATALYST_OAUTH_CLIENT_ID", self.catalyst_oauth_client_id),
+                ("KSPCIP_CATALYST_OAUTH_CLIENT_SECRET", self.catalyst_oauth_client_secret),
+                ("KSPCIP_CATALYST_OAUTH_REFRESH_TOKEN", self.catalyst_oauth_refresh_token),
+            ):
+                if not value:
+                    problems.append(f"{name} must be set for the Catalyst data store")
+
+        # An export written to a function's local disk is lost at the next cold
+        # start, and the audit row would then cite a file nobody can fetch.
+        if self.datastore_backend is DataStoreBackend.CATALYST and \
+                self.filestore_backend is FileStoreBackend.LOCAL:
+            problems.append(
+                "KSPCIP_FILESTORE_BACKEND must be 'catalyst' when the data store is Catalyst; "
+                "exports on a function filesystem do not survive a cold start"
+            )
+
+        if self.identity_backend is IdentityBackend.CATALYST and not self.catalyst_auth_issuer:
+            problems.append("KSPCIP_CATALYST_AUTH_ISSUER must be set for the Catalyst identity backend")
+
+        if self.language_provider is LanguageProviderName.BHASHINI and not (
+            self.bhashini_user_id and self.bhashini_api_key
+        ):
+            problems.append(
+                "KSPCIP_BHASHINI_USER_ID and KSPCIP_BHASHINI_API_KEY must be set for the Bhashini provider"
+            )
+
+        if self.llm_provider is not LLMProviderName.LOCAL and not self.llm_api_key:
+            problems.append(f"KSPCIP_LLM_API_KEY must be set for the '{self.llm_provider}' provider")
+
+        if self.environment is not Environment.LOCAL and self.jwt_secret == "dev-only-secret-change-me":
+            problems.append("KSPCIP_JWT_SECRET is still the development placeholder")
+
+        return problems
+
+    def assert_deployable(self) -> None:
+        problems = self.deployment_problems()
+        if problems:
+            raise ValueError(
+                "Configuration is not deployable:\n  - " + "\n  - ".join(problems)
+            )
 
     def ensure_directories(self) -> None:
         self.sqlite_path.parent.mkdir(parents=True, exist_ok=True)

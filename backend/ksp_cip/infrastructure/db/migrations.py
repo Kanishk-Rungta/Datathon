@@ -18,6 +18,38 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 MIGRATIONS: list[tuple[int, str, str]] = [
     # (version, description, sql) — base schema is version 1 and is applied
     # from schema.sql; further changes are appended here.
+    (
+        2,
+        "external identity subject on cip_user_account (Catalyst Authentication mapping)",
+        """
+        ALTER TABLE cip_user_account ADD COLUMN external_subject TEXT;
+        CREATE INDEX IF NOT EXISTS ix_user_external_subject
+            ON cip_user_account (external_subject);
+        """,
+    ),
+    (
+        3,
+        "event calendar reference table for event-window comparison",
+        """
+        CREATE TABLE IF NOT EXISTS cip_event_calendar (
+            event_id        TEXT PRIMARY KEY,
+            event_name      TEXT NOT NULL,
+            event_type      TEXT NOT NULL,
+            date_from       TEXT NOT NULL,
+            date_to         TEXT NOT NULL,
+            district_id     INTEGER,
+            unit_id         INTEGER,
+            source          TEXT NOT NULL,
+            data_quality    TEXT NOT NULL DEFAULT 'unverified',
+            approval_status TEXT NOT NULL DEFAULT 'pending',
+            created_at      TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_event_window
+            ON cip_event_calendar (date_from, date_to);
+        CREATE INDEX IF NOT EXISTS ix_event_approval
+            ON cip_event_calendar (approval_status);
+        """,
+    ),
 ]
 
 
