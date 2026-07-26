@@ -145,6 +145,26 @@ class TestUpsertTranslation:
             _parse_upsert("INSERT INTO t (a) VALUES (1) ON CONFLICT (a) DO MERGE")
 
 
+class TestSchemaCapability:
+    """P2-02: table_columns() replaces a repository constructing PRAGMA directly."""
+
+    def test_table_columns_reads_the_static_schema_manifest(self):
+        from ksp_cip.config import Settings
+        from ksp_cip.infrastructure.catalyst.datastore import CatalystDataStore
+
+        store = CatalystDataStore(Settings(catalyst_project_id="p"), auth=object())
+        columns = store.table_columns("curated_CaseMaster")
+        assert "CaseMasterID" in columns
+        assert "CrimeNo" in columns
+
+    def test_an_unknown_table_returns_an_empty_list_not_an_error(self):
+        from ksp_cip.config import Settings
+        from ksp_cip.infrastructure.catalyst.datastore import CatalystDataStore
+
+        store = CatalystDataStore(Settings(catalyst_project_id="p"), auth=object())
+        assert store.table_columns("not_a_real_table") == []
+
+
 class TestUnsupportedOperations:
     def test_pragma_is_refused_rather_than_approximated(self, monkeypatch):
         from ksp_cip.config import Settings

@@ -242,6 +242,21 @@ class CatalystDataStore:
     def close(self) -> None:  # pragma: no cover - nothing to release
         return None
 
+    def table_columns(self, table: str) -> list[str]:
+        """Declared columns for ``table``, from the static schema manifest.
+
+        Catalyst has no documented live introspection endpoint equivalent to
+        SQLite's ``PRAGMA table_info``, so this reads the same
+        ``schema.sql`` + ``migrations.py`` this package ships (see
+        ``infrastructure.db.schema_reflection``) — accurate as long as the
+        live Catalyst project was actually provisioned to match those files.
+        That is a real limitation, not a fallback pretending to be equivalent
+        to live introspection; see ``docs/deployment/catalyst-schema.md``.
+        """
+        from ..db.schema_reflection import schema_columns
+
+        return list(schema_columns().get(table, []))
+
     # ---------------------------------------------------------------- HTTP
     def _zcql(self, statement: str) -> list[dict[str, Any]]:
         body = json.dumps({"query": statement}).encode("utf-8")

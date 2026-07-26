@@ -1,0 +1,3203 @@
+{
+  "generated_from": [
+    "backend/ksp_cip/infrastructure/db/schema.sql",
+    "migrations.py"
+  ],
+  "table_count": 47,
+  "tables": [
+    {
+      "table": "audit_event",
+      "columns": [
+        {
+          "name": "event_id",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "occurred_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "actor_user_id",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "actor_role",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "scope_summary",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "purpose_code",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "action",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "agent",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "object_type",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "object_ids",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "request_hash",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "outcome",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "latency_ms",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "correlation_id",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "detail_json",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "cip_case_priority",
+      "columns": [
+        {
+          "name": "case_master_id",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": {
+            "table": "curated_CaseMaster",
+            "column": "CaseMasterID"
+          }
+        },
+        {
+          "name": "crime_no",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "score",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "band",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "components_json",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "computed_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "cip_conversation_turn",
+      "columns": [
+        {
+          "name": "session_id",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "turn_seq",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "user_id",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "role",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "expires_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "user_text_original",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "user_text_english",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "user_language",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "answer_text_english",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "answer_text_display",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "intent",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "evidence_json",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "pinned_json",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "payload_type",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "cip_early_warning_alert",
+      "columns": [
+        {
+          "name": "alert_id",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "scope_type",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "scope_id",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "scope_name",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "crime_sub_head_id",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "crime_sub_head",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "window_start",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "window_end",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "observed_count",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "baseline_mean",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "baseline_stddev",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "z_score",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "severity",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "case_ids",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "explanation_json",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "computed_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "cip_embedding_index",
+      "columns": [
+        {
+          "name": "doc_id",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "source_table",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "source_pk",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "case_master_id",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "unit_id",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "lang",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "text_snippet",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "embedding",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "model_name",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "cip_embedding_stats",
+      "columns": [
+        {
+          "name": "model_name",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "dimensions",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "doc_count",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "idf_json",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "built_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "cip_entity_resolution_link",
+      "columns": [
+        {
+          "name": "link_id",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "left_accused_id",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "right_accused_id",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "score",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "decision",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "review_state",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "features_json",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "reviewed_by",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "reviewed_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "cip_event_calendar",
+      "columns": [
+        {
+          "name": "event_id",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "event_name",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "event_type",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "date_from",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "date_to",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "district_id",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "unit_id",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "source",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "data_quality",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "approval_status",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "cip_graph_edge",
+      "columns": [
+        {
+          "name": "edge_id",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "src_type",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "src_id",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "dst_type",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "dst_id",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "edge_type",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "weight",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "case_ids",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "unit_ids",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "provenance",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "detail_json",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "cip_hotspot_cell",
+      "columns": [
+        {
+          "name": "cell_id",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "grid_row",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "grid_col",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "centroid_lat",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "centroid_lon",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "district_id",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "unit_id",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "window_start",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "window_end",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "case_count",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "baseline_mean",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "intensity",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "top_crime_sub_head",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "case_ids",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "computed_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "cip_kv",
+      "columns": [
+        {
+          "name": "namespace",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "key",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "value_json",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "expires_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "cip_person_identity",
+      "columns": [
+        {
+          "name": "identity_id",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "canonical_name",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "normalized_name",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "phonetic_key",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "age_estimate",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "gender_id",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "district_ids",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "source_ids",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "case_ids",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "member_count",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "cip_repeat_offender_score",
+      "columns": [
+        {
+          "name": "identity_id",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "canonical_name",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "case_count",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "distinct_crime_heads",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "recency_days",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "gravity_escalation",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "network_centrality",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "score",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "band",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "components_json",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "case_ids",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "district_ids",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "unit_ids",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "computed_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "cip_unit_closure",
+      "columns": [
+        {
+          "name": "ancestor_unit_id",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "descendant_unit_id",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "depth",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "cip_user_account",
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "username",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "display_name",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "role",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "home_unit_id",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "district_id",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "password_salt",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "password_hash",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "active",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "external_subject",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null,
+          "added_by": "migration"
+        }
+      ]
+    },
+    {
+      "table": "ctl_batch_log",
+      "columns": [
+        {
+          "name": "batch_id",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "source_table",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "row_count",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "min_pk",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "max_pk",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "content_sha256",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "object_key",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "received_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "loaded_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "error_detail",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "ctl_dq_result",
+      "columns": [
+        {
+          "name": "dq_id",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "batch_id",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "source_table",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "check_name",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "severity",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "passed",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "failed_rows",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "total_rows",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "detail_json",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "checked_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "ctl_job_watermark",
+      "columns": [
+        {
+          "name": "job_name",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "watermark_value",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "detail_json",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "ctl_row_hash",
+      "columns": [
+        {
+          "name": "source_table",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "source_pk",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "row_hash",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_Accused",
+      "columns": [
+        {
+          "name": "AccusedMasterID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "CaseMasterID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": {
+            "table": "curated_CaseMaster",
+            "column": "CaseMasterID"
+          }
+        },
+        {
+          "name": "AccusedName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "AgeYear",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "GenderID",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "PersonID",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_Act",
+      "columns": [
+        {
+          "name": "ActCode",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "ActDescription",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "ShortName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "Active",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_ActSectionAssociation",
+      "columns": [
+        {
+          "name": "cip_assoc_id",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "CaseMasterID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": {
+            "table": "curated_CaseMaster",
+            "column": "CaseMasterID"
+          }
+        },
+        {
+          "name": "ActID",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "SectionID",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "ActOrderID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "SectionOrderID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_ArrestSurrender",
+      "columns": [
+        {
+          "name": "ArrestSurrenderID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "CaseMasterID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": {
+            "table": "curated_CaseMaster",
+            "column": "CaseMasterID"
+          }
+        },
+        {
+          "name": "ArrestSurrenderTypeID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "ArrestSurrenderDate",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "ArrestSurrenderStateId",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_State",
+            "column": "StateID"
+          }
+        },
+        {
+          "name": "ArrestSurrenderDistrictId",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_District",
+            "column": "DistrictID"
+          }
+        },
+        {
+          "name": "PoliceStationID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_Unit",
+            "column": "UnitID"
+          }
+        },
+        {
+          "name": "IOID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_Employee",
+            "column": "EmployeeID"
+          }
+        },
+        {
+          "name": "CourtID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_Court",
+            "column": "CourtID"
+          }
+        },
+        {
+          "name": "AccusedMasterID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_Accused",
+            "column": "AccusedMasterID"
+          }
+        },
+        {
+          "name": "IsAccused",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "IsComplainantAccused",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_CaseCategory",
+      "columns": [
+        {
+          "name": "CaseCategoryID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "LookupValue",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "CategoryCode",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_CaseMaster",
+      "columns": [
+        {
+          "name": "CaseMasterID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "CrimeNo",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "CaseNo",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "CrimeRegisteredDate",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "PolicePersonID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_Employee",
+            "column": "EmployeeID"
+          }
+        },
+        {
+          "name": "PoliceStationID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_Unit",
+            "column": "UnitID"
+          }
+        },
+        {
+          "name": "CaseCategoryID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_CaseCategory",
+            "column": "CaseCategoryID"
+          }
+        },
+        {
+          "name": "GravityOffenceID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_GravityOffence",
+            "column": "GravityOffenceID"
+          }
+        },
+        {
+          "name": "CrimeMajorHeadID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_CrimeHead",
+            "column": "CrimeHeadID"
+          }
+        },
+        {
+          "name": "CrimeMinorHeadID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_CrimeSubHead",
+            "column": "CrimeSubHeadID"
+          }
+        },
+        {
+          "name": "CaseStatusID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_CaseStatusMaster",
+            "column": "CaseStatusID"
+          }
+        },
+        {
+          "name": "CourtID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_Court",
+            "column": "CourtID"
+          }
+        },
+        {
+          "name": "IncidentFromDate",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "IncidentToDate",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "InfoReceivedPSDate",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "latitude",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "longitude",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "BriefFacts",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "cip_brief_facts_kn",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "cip_dq_flags",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_CaseStatusMaster",
+      "columns": [
+        {
+          "name": "CaseStatusID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "CaseStatusName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_CasteMaster",
+      "columns": [
+        {
+          "name": "caste_master_id",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "caste_master_name",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_ChargesheetDetails",
+      "columns": [
+        {
+          "name": "CSID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "CaseMasterID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": {
+            "table": "curated_CaseMaster",
+            "column": "CaseMasterID"
+          }
+        },
+        {
+          "name": "csdate",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "cstype",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "PolicePersonID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_Employee",
+            "column": "EmployeeID"
+          }
+        }
+      ]
+    },
+    {
+      "table": "curated_ComplainantDetails",
+      "columns": [
+        {
+          "name": "ComplainantID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "CaseMasterID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": {
+            "table": "curated_CaseMaster",
+            "column": "CaseMasterID"
+          }
+        },
+        {
+          "name": "ComplainantName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "AgeYear",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "OccupationID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_OccupationMaster",
+            "column": "OccupationID"
+          }
+        },
+        {
+          "name": "ReligionID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_ReligionMaster",
+            "column": "ReligionID"
+          }
+        },
+        {
+          "name": "CasteID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_CasteMaster",
+            "column": "caste_master_id"
+          }
+        },
+        {
+          "name": "GenderID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_Court",
+      "columns": [
+        {
+          "name": "CourtID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "CourtName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "DistrictID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_District",
+            "column": "DistrictID"
+          }
+        },
+        {
+          "name": "StateID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_State",
+            "column": "StateID"
+          }
+        },
+        {
+          "name": "Active",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_CrimeHead",
+      "columns": [
+        {
+          "name": "CrimeHeadID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "CrimeGroupName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "Active",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_CrimeHeadActSection",
+      "columns": [
+        {
+          "name": "CrimeHeadID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": true,
+          "references": {
+            "table": "curated_CrimeHead",
+            "column": "CrimeHeadID"
+          }
+        },
+        {
+          "name": "ActCode",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "SectionCode",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_CrimeSubHead",
+      "columns": [
+        {
+          "name": "CrimeSubHeadID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "CrimeHeadID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_CrimeHead",
+            "column": "CrimeHeadID"
+          }
+        },
+        {
+          "name": "CrimeHeadName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "SeqID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_Designation",
+      "columns": [
+        {
+          "name": "DesignationID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "DesignationName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "Active",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "SortOrder",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_District",
+      "columns": [
+        {
+          "name": "DistrictID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "DistrictName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "StateID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_State",
+            "column": "StateID"
+          }
+        },
+        {
+          "name": "Active",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_Employee",
+      "columns": [
+        {
+          "name": "EmployeeID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "DistrictID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_District",
+            "column": "DistrictID"
+          }
+        },
+        {
+          "name": "UnitID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_Unit",
+            "column": "UnitID"
+          }
+        },
+        {
+          "name": "RankID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_Rank",
+            "column": "RankID"
+          }
+        },
+        {
+          "name": "DesignationID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_Designation",
+            "column": "DesignationID"
+          }
+        },
+        {
+          "name": "KGID",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "FirstName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "EmployeeDOB",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "GenderID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "BloodGroupID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "PhysicallyChallenged",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "AppointmentDate",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_GravityOffence",
+      "columns": [
+        {
+          "name": "GravityOffenceID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "LookupValue",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_OccupationMaster",
+      "columns": [
+        {
+          "name": "OccupationID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "OccupationName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_Rank",
+      "columns": [
+        {
+          "name": "RankID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "RankName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "Hierarchy",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "Active",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_ReligionMaster",
+      "columns": [
+        {
+          "name": "ReligionID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "ReligionName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_Section",
+      "columns": [
+        {
+          "name": "ActCode",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": true,
+          "references": {
+            "table": "curated_Act",
+            "column": "ActCode"
+          }
+        },
+        {
+          "name": "SectionCode",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "SectionDescription",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "Active",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_State",
+      "columns": [
+        {
+          "name": "StateID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "StateName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "NationalityID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "Active",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_Unit",
+      "columns": [
+        {
+          "name": "UnitID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "UnitName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "TypeID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_UnitType",
+            "column": "UnitTypeID"
+          }
+        },
+        {
+          "name": "ParentUnit",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "NationalityID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "StateID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_State",
+            "column": "StateID"
+          }
+        },
+        {
+          "name": "DistrictID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_District",
+            "column": "DistrictID"
+          }
+        },
+        {
+          "name": "Active",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "cip_latitude",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "cip_longitude",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_UnitType",
+      "columns": [
+        {
+          "name": "UnitTypeID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "UnitTypeName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "CityDistState",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "Hierarchy",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "Active",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "curated_Victim",
+      "columns": [
+        {
+          "name": "VictimMasterID",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "CaseMasterID",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": {
+            "table": "curated_CaseMaster",
+            "column": "CaseMasterID"
+          }
+        },
+        {
+          "name": "VictimName",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "AgeYear",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "GenderID",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "VictimPolice",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "ext_financial_transaction",
+      "columns": [
+        {
+          "name": "txn_id",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "case_master_id",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": {
+            "table": "curated_CaseMaster",
+            "column": "CaseMasterID"
+          }
+        },
+        {
+          "name": "from_kind",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "from_ref",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "from_label",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "to_kind",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "to_ref",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "to_label",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "amount",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "currency",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "txn_date",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "channel",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "is_extension",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "raw_record",
+      "columns": [
+        {
+          "name": "raw_id",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "source_table",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "source_pk",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "payload_json",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "_batch_id",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "_extracted_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "_row_hash",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    }
+  ],
+  "indexes": [
+    {
+      "name": "ix_raw_record_table",
+      "table": "raw_record",
+      "unique": false,
+      "columns": [
+        "source_table",
+        "source_pk"
+      ]
+    },
+    {
+      "name": "ix_raw_record_batch",
+      "table": "raw_record",
+      "unique": false,
+      "columns": [
+        "_batch_id"
+      ]
+    },
+    {
+      "name": "ix_ctl_batch_status",
+      "table": "ctl_batch_log",
+      "unique": false,
+      "columns": [
+        "status",
+        "source_table"
+      ]
+    },
+    {
+      "name": "ix_ctl_dq_batch",
+      "table": "ctl_dq_result",
+      "unique": false,
+      "columns": [
+        "batch_id"
+      ]
+    },
+    {
+      "name": "ix_district_state",
+      "table": "curated_District",
+      "unique": false,
+      "columns": [
+        "StateID"
+      ]
+    },
+    {
+      "name": "ix_unit_district",
+      "table": "curated_Unit",
+      "unique": false,
+      "columns": [
+        "DistrictID"
+      ]
+    },
+    {
+      "name": "ix_unit_parent",
+      "table": "curated_Unit",
+      "unique": false,
+      "columns": [
+        "ParentUnit"
+      ]
+    },
+    {
+      "name": "ix_closure_descendant",
+      "table": "cip_unit_closure",
+      "unique": false,
+      "columns": [
+        "descendant_unit_id"
+      ]
+    },
+    {
+      "name": "ix_employee_unit",
+      "table": "curated_Employee",
+      "unique": false,
+      "columns": [
+        "UnitID"
+      ]
+    },
+    {
+      "name": "ix_subhead_head",
+      "table": "curated_CrimeSubHead",
+      "unique": false,
+      "columns": [
+        "CrimeHeadID"
+      ]
+    },
+    {
+      "name": "ux_case_crimeno",
+      "table": "curated_CaseMaster",
+      "unique": true,
+      "columns": [
+        "CrimeNo"
+      ]
+    },
+    {
+      "name": "ix_case_station_date",
+      "table": "curated_CaseMaster",
+      "unique": false,
+      "columns": [
+        "PoliceStationID",
+        "CrimeRegisteredDate"
+      ]
+    },
+    {
+      "name": "ix_case_minor_head",
+      "table": "curated_CaseMaster",
+      "unique": false,
+      "columns": [
+        "CrimeMinorHeadID",
+        "CrimeRegisteredDate"
+      ]
+    },
+    {
+      "name": "ix_case_status",
+      "table": "curated_CaseMaster",
+      "unique": false,
+      "columns": [
+        "CaseStatusID"
+      ]
+    },
+    {
+      "name": "ix_case_registered",
+      "table": "curated_CaseMaster",
+      "unique": false,
+      "columns": [
+        "CrimeRegisteredDate"
+      ]
+    },
+    {
+      "name": "ix_complainant_case",
+      "table": "curated_ComplainantDetails",
+      "unique": false,
+      "columns": [
+        "CaseMasterID"
+      ]
+    },
+    {
+      "name": "ix_victim_case",
+      "table": "curated_Victim",
+      "unique": false,
+      "columns": [
+        "CaseMasterID"
+      ]
+    },
+    {
+      "name": "ix_accused_case",
+      "table": "curated_Accused",
+      "unique": false,
+      "columns": [
+        "CaseMasterID"
+      ]
+    },
+    {
+      "name": "ix_accused_name",
+      "table": "curated_Accused",
+      "unique": false,
+      "columns": [
+        "AccusedName"
+      ]
+    },
+    {
+      "name": "ix_actsection_case",
+      "table": "curated_ActSectionAssociation",
+      "unique": false,
+      "columns": [
+        "CaseMasterID"
+      ]
+    },
+    {
+      "name": "ix_arrest_case",
+      "table": "curated_ArrestSurrender",
+      "unique": false,
+      "columns": [
+        "CaseMasterID"
+      ]
+    },
+    {
+      "name": "ix_arrest_accused",
+      "table": "curated_ArrestSurrender",
+      "unique": false,
+      "columns": [
+        "AccusedMasterID"
+      ]
+    },
+    {
+      "name": "ix_chargesheet_case",
+      "table": "curated_ChargesheetDetails",
+      "unique": false,
+      "columns": [
+        "CaseMasterID"
+      ]
+    },
+    {
+      "name": "ix_edge_src",
+      "table": "cip_graph_edge",
+      "unique": false,
+      "columns": [
+        "src_type",
+        "src_id"
+      ]
+    },
+    {
+      "name": "ix_edge_dst",
+      "table": "cip_graph_edge",
+      "unique": false,
+      "columns": [
+        "dst_type",
+        "dst_id"
+      ]
+    },
+    {
+      "name": "ix_edge_type",
+      "table": "cip_graph_edge",
+      "unique": false,
+      "columns": [
+        "edge_type"
+      ]
+    },
+    {
+      "name": "ix_embedding_case",
+      "table": "cip_embedding_index",
+      "unique": false,
+      "columns": [
+        "case_master_id"
+      ]
+    },
+    {
+      "name": "ix_embedding_model",
+      "table": "cip_embedding_index",
+      "unique": false,
+      "columns": [
+        "model_name"
+      ]
+    },
+    {
+      "name": "ix_identity_norm",
+      "table": "cip_person_identity",
+      "unique": false,
+      "columns": [
+        "normalized_name"
+      ]
+    },
+    {
+      "name": "ix_identity_phonetic",
+      "table": "cip_person_identity",
+      "unique": false,
+      "columns": [
+        "phonetic_key"
+      ]
+    },
+    {
+      "name": "ix_er_decision",
+      "table": "cip_entity_resolution_link",
+      "unique": false,
+      "columns": [
+        "decision",
+        "review_state"
+      ]
+    },
+    {
+      "name": "ix_offender_score",
+      "table": "cip_repeat_offender_score",
+      "unique": false,
+      "columns": [
+        "score DESC"
+      ]
+    },
+    {
+      "name": "ix_hotspot_district",
+      "table": "cip_hotspot_cell",
+      "unique": false,
+      "columns": [
+        "district_id",
+        "intensity DESC"
+      ]
+    },
+    {
+      "name": "ix_alert_scope",
+      "table": "cip_early_warning_alert",
+      "unique": false,
+      "columns": [
+        "scope_type",
+        "scope_id",
+        "computed_at"
+      ]
+    },
+    {
+      "name": "ix_priority_score",
+      "table": "cip_case_priority",
+      "unique": false,
+      "columns": [
+        "score DESC"
+      ]
+    },
+    {
+      "name": "ix_conversation_user",
+      "table": "cip_conversation_turn",
+      "unique": false,
+      "columns": [
+        "user_id",
+        "created_at"
+      ]
+    },
+    {
+      "name": "ix_kv_expiry",
+      "table": "cip_kv",
+      "unique": false,
+      "columns": [
+        "expires_at"
+      ]
+    },
+    {
+      "name": "ix_ext_txn_case",
+      "table": "ext_financial_transaction",
+      "unique": false,
+      "columns": [
+        "case_master_id"
+      ]
+    },
+    {
+      "name": "ix_ext_txn_from",
+      "table": "ext_financial_transaction",
+      "unique": false,
+      "columns": [
+        "from_ref"
+      ]
+    },
+    {
+      "name": "ix_ext_txn_to",
+      "table": "ext_financial_transaction",
+      "unique": false,
+      "columns": [
+        "to_ref"
+      ]
+    },
+    {
+      "name": "ix_audit_actor",
+      "table": "audit_event",
+      "unique": false,
+      "columns": [
+        "actor_user_id",
+        "occurred_at"
+      ]
+    },
+    {
+      "name": "ix_audit_action",
+      "table": "audit_event",
+      "unique": false,
+      "columns": [
+        "action",
+        "occurred_at"
+      ]
+    },
+    {
+      "name": "ix_audit_correlation",
+      "table": "audit_event",
+      "unique": false,
+      "columns": [
+        "correlation_id"
+      ]
+    },
+    {
+      "name": "ix_user_external_subject",
+      "table": "cip_user_account",
+      "unique": false,
+      "columns": [
+        "external_subject"
+      ]
+    },
+    {
+      "name": "ix_event_window",
+      "table": "cip_event_calendar",
+      "unique": false,
+      "columns": [
+        "date_from",
+        "date_to"
+      ]
+    },
+    {
+      "name": "ix_event_approval",
+      "table": "cip_event_calendar",
+      "unique": false,
+      "columns": [
+        "approval_status"
+      ]
+    }
+  ]
+}

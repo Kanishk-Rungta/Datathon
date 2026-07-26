@@ -163,8 +163,7 @@ class Loader:
         as a logged drop instead of a schema change.
         """
         if table not in self._columns:
-            rows = self._store.query(f'PRAGMA table_info("{table}")', {})
-            self._columns[table] = [str(row["name"]) for row in rows]
+            self._columns[table] = list(self._store.table_columns(table))
         return self._columns[table]
 
     def _conform(self, table: str, rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
