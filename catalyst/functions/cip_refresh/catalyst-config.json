@@ -1,5 +1,5 @@
 {
-  "deployment": { "name": "cip_refresh", "type": "event", "stack": "python3.11", "memory": 1024, "timeout": 900 },
+  "deployment": { "name": "cip_refresh", "type": "event", "stack": "python_3_11", "memory": 1024, "timeout": 900 },
   "execution": { "main": "main.py" },
-  "comment": "Stack bumped from python3.9 to satisfy backend/pyproject.toml's requires-python>=3.11. Confirm the exact supported stack identifier string against the target project before deploying -- see docs/deployment/catalyst-runtime.md."
+  "comment": "Stack bumped from python3.9 to satisfy backend/pyproject.toml's requires-python>=3.11. Naming convention (python_<major>_<minor>) confirmed against the installed Catalyst CLI's 'functions:add --stack' help text -- see docs/deployment/v3-catalyst-commands.md. Whether 3.11 specifically is available in the target project still needs confirming at provisioning time."
 }
