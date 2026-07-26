@@ -68,6 +68,17 @@ def bootstrap(entrypoint_file: str) -> None:
     if str(backend_root) not in sys.path:
         sys.path.insert(0, str(backend_root))
 
+    # Third-party dependencies, vendored next to the entrypoint by
+    # scripts/build_catalyst_artifact.py. AppSail does **not** install
+    # requirements.txt server-side -- it ships the source directory as-is, so
+    # an un-vendored artifact dies at `import uvicorn` before reaching any
+    # application code. Absent in a repo checkout, where the virtualenv
+    # already provides these; hence the existence check rather than a hard
+    # requirement.
+    vendor_dir = entrypoint_dir / "vendor"
+    if vendor_dir.is_dir() and str(vendor_dir) not in sys.path:
+        sys.path.insert(0, str(vendor_dir))
+
     os.environ.setdefault("KSPCIP_DATASTORE_BACKEND", "catalyst")
 
     catalyst_env = os.environ.get("KSPCIP_CATALYST_ENVIRONMENT", "Development")

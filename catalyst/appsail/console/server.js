@@ -1,9 +1,10 @@
 /* AppSail static host for the console.
  *
- * Only two responsibilities: serve `frontend/dist`, and forward `/api` to the
- * cip-api AppSail service (see docs/deployment/catalyst-runtime.md for why
- * this is an AppSail service and not a Function) so the browser sees a single
- * origin. Anything else belongs in the backend, not here.
+ * Only two responsibilities: serve the built React console, and forward
+ * `/api` to the cip-api AppSail service (see
+ * docs/deployment/catalyst-runtime.md for why this is an AppSail service and
+ * not a Function) so the browser sees a single origin. Anything else belongs
+ * in the backend, not here.
  */
 const http = require('http')
 const https = require('https')
@@ -11,7 +12,15 @@ const fs = require('fs')
 const path = require('path')
 
 const PORT = process.env.X_ZOHO_CATALYST_LISTEN_PORT || 9000
-const DIST = path.resolve(__dirname, '../../../frontend/dist')
+// Two layouts, resolved the same way `catalyst/_bootstrap.py` resolves the
+// API's package path: a `dist` sibling staged by
+// `scripts/build_catalyst_artifact.py --target console` (deployment), or the
+// repo-relative `frontend/dist` when running this file straight out of the
+// checkout (local dev, e.g. `scripts/dev.sh` / the D1 console smoke test).
+// Don't collapse this to one path -- the staged layout has no repo above it.
+const STAGED_DIST = path.resolve(__dirname, 'dist')
+const CHECKOUT_DIST = path.resolve(__dirname, '../../../frontend/dist')
+const DIST = fs.existsSync(path.join(STAGED_DIST, 'index.html')) ? STAGED_DIST : CHECKOUT_DIST
 const API_TARGET = process.env.CIP_API_URL
 
 const TYPES = {
@@ -35,7 +44,12 @@ http.createServer((req, res) => {
     // a public endpoint is, so the client module must match the target's own
     // scheme rather than always assuming https.
     const client = target.protocol === 'http:' ? http : https
-    const proxied = client.request(target, { method: req.method, headers: req.headers }, (upstream) => {
+    // The inbound Host names *this* service. Forwarding it verbatim to a
+    // different origin makes AppSail's front end reject the request with a
+    // bare 400 before it reaches the API at all. Locally both sides were
+    // 127.0.0.1, so this only shows up once the two are really separate hosts.
+    const headers = { ...req.headers, host: target.host }
+    const proxied = client.request(target, { method: req.method, headers }, (upstream) => {
       res.writeHead(upstream.statusCode, upstream.headers)
       upstream.pipe(res)
     })

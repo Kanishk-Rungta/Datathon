@@ -1,7 +1,13 @@
 {
-  "name": "cip-api",
-  "stack": "python_3_11",
-  "command": "python3 -u server.py",
-  "port": 9000,
-  "comment": "Runs ksp_cip.interface.api.main:get_app via uvicorn. Stack naming convention (python_<major>_<minor>) confirmed against the installed Catalyst CLI's own 'functions:add --stack' help text -- see docs/deployment/v3-catalyst-commands.md. Whether 3.11 specifically is available in the target project still needs confirming at provisioning time."
+	"command": "python3 -u server.py",
+	"build_path": "./",
+	"stack": "python_3_11",
+	"env_variables": {
+		"KSPCIP_ENVIRONMENT": "local",
+		"KSPCIP_DATASTORE_BACKEND": "sqlite",
+		"KSPCIP_SQLITE_PATH": "/tmp/ksp_cip.db",
+		"KSPCIP_FILESTORE_ROOT": "/tmp/filestore"
+	},
+	"memory": 512,
+	"scripts": {}
 }

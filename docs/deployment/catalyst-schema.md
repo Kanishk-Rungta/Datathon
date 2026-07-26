@@ -36,24 +36,24 @@ provisioned differently than what's on disk.
 ## Applying it
 
 1. For each table in the manifest, create the equivalent Catalyst Data Store
-   table through the Catalyst console, CLI, or an IaC workflow — column
-   names and types from the manifest, `primary_key: true` as the table's ID
-   column, `not_null: true` columns as required.
+   table **through the console** — this is confirmed to be the only path (see
+   below). Run `python scripts/generate_catalyst_console_checklist.py` and
+   follow `docs/deployment/catalyst-schema-console-checklist.md` column by
+   column; it already encodes the type/uniqueness adaptations below so no
+   per-column judgment call is needed at provisioning time.
 2. Foreign keys in this manifest are **documentation of intent**, not a Data
    Store constraint to necessarily enforce identically — Catalyst's own
    constraint model may differ; enforce referential integrity the way the
    target project's Data Store actually supports, and note where it diverges.
-3. Create the indexes listed, matching `unique: true` where set.
-4. Create `ctl_schema_version` first (it is in the manifest like any other
-   table) and insert one row recording the schema version this manifest was
-   generated at, so a mismatched deployment can refuse to start rather than
-   run against an unprovisioned or stale project — this is the "read-only
-   startup check" P2-01 asks for; it is not implemented as an automatic
-   migration runner against Catalyst, only as a compatibility check.
-5. Record the exact console/CLI steps or exported IaC definition used, in
-   this file's git history (a new commit updating this section), so the next
-   person provisioning a project has the actual commands, not just the
-   target shape.
+3. ~~Create the indexes listed, matching `unique: true` where set.~~ Not
+   possible — see "None of this schema's 46 planned indexes are creatable"
+   below. Skip this step; it is kept here struck through so a reader doesn't
+   wonder whether it was forgotten.
+4. ~~Create `ctl_schema_version` first...~~ Not possible as written — that
+   table does not exist in `schema.sql`. See below.
+5. Record the exact console steps used, in this file's git history (a new
+   commit updating this section), so the next person provisioning a project
+   has the actual sequence, not just the target shape.
 
 ## What this does not do
 
@@ -75,11 +75,59 @@ provisioned differently than what's on disk.
 port on every table and column, for the schema as it exists on disk right now
 (automated test).
 
-**Assumed, not verified:** that Catalyst Data Store's actual type system,
-constraint model, and index semantics map cleanly onto what's declared here.
-No live Catalyst project has been used to provision this schema. The first
-real provisioning pass against a Development project should update this
-document with whatever translation was actually needed — a type that doesn't
-exist, an index limit, a constraint Catalyst doesn't support — since that is
-exactly the kind of gap a manifest generated from SQLite's own schema dialect
-cannot predict in advance.
+**Verified against the live KSP-CIP Development project (console UI,
+Zoho's own documentation, and the CLI's own source):**
+
+- Table and column creation is **console-UI-only**. There is no REST API, no
+  CLI command, and no IaC-into-an-existing-project path — the CLI's own
+  Data Store client (`zcatalyst-cli/lib/endpoints/lib/datastore.js`) only
+  exposes `GET` (list tables, get columns), never a create. `iac:export`/
+  `iac:import` round-trip whole-project clones, not schema injection into an
+  already-linked project.
+- Column types actually offered: `Text`, `Var Char`, `Date`, `DateTime`,
+  `Int`, `Double`, `Boolean`, `Bigint`, `Foreign Key`, `Encrypted Text`.
+  `schema.sql`'s three SQLite types map as: `TEXT` → `Text` (or `Var Char`
+  when uniqueness is needed — see below), `INTEGER` → `Bigint`, `REAL` →
+  `Double`.
+- **`Var Char` is capped at 255 characters** (Catalyst's own stated limit).
+  `Text` cannot be constrained `Is Unique` at all — only `Var Char` and the
+  numeric types expose an `Is Unique` toggle. This means a `TEXT PRIMARY KEY`
+  column must be provisioned as `Var Char(255)`, not `Text`, to get any
+  DB-level uniqueness — a genuine type change from the source schema, not
+  just a rename.
+- **`Is Unique` is single-column only.** Catalyst has no composite/multi-column
+  uniqueness constraint. The 6 tables in this schema with a composite primary
+  key (`cip_conversation_turn`, `cip_kv`, `cip_unit_closure`, `ctl_row_hash`,
+  `curated_CrimeHeadActSection`, `curated_Section`) get `Is Mandatory` on every
+  key column and no DB-enforced uniqueness — the combination's uniqueness is
+  an application-level guarantee only.
+- **None of this schema's 46 planned indexes are creatable in Catalyst Data
+  Store**, full stop — not a limit, an absent feature. Catalyst's "Search
+  Index" toggle (available on `Var Char`/numeric columns) is full-text search
+  integration with Catalyst Search, unrelated to query-performance indexing;
+  secondary/composite indexes exist only in **Catalyst NoSQL**, a different
+  service this application does not use for curated data. The one exception:
+  `ux_case_crimeno` (`curated_CaseMaster.CrimeNo`) is a single-column unique
+  index, so it is expressible as `Is Unique` on that one `Var Char` column.
+  This is a hard platform gap, not an open item — any query that depended on
+  one of the other 45 indexes for performance will do a full scan on Catalyst.
+- `ctl_schema_version`, referenced in step 4 above, **does not exist** in
+  `schema.sql` or the generated manifest. It was never implemented. Either add
+  it to the real schema before relying on this step, or drop the step.
+- Every new table arrives with 4 system columns already present: `ROWID`
+  (bigint, the actual storage primary key), `CREATORID` (bigint),
+  `CREATEDTIME` (datetime), `MODIFIEDTIME` (datetime). Application primary
+  keys never become the real storage key — Catalyst's `ROWID` always is.
+
+`scripts/generate_catalyst_console_checklist.py` turns the manifest into
+`docs/deployment/catalyst-schema-console-checklist.md`, an ordered,
+copy-into-the-console checklist encoding all of the above per column, since
+there is no faster or programmatic path available.
+
+**Still assumed, not verified:** `Foreign Key` as a first-class column type
+was seen in the dropdown but not exercised — this schema does not use it,
+since the manifest's foreign keys are documentation of intent, not enforced
+constraints (see above). `Boolean`, `Date`, `Encrypted Text`, and `PII/ePHI`
+tagging were seen in the console but are not used by any column in this
+schema; a follow-up pass could apply `PII/ePHI` to genuinely
+person-identifying columns.

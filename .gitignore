@@ -17,3 +17,6 @@ backend/var/filestore/exports/
 backend/var/filestore/audio/
 *.db-shm
 *.db-wal
+
+# Catalyst CLI local project link (machine-specific, not a secret but not shared state)
+.catalystrc

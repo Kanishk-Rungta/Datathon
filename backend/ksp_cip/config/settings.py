@@ -274,8 +274,13 @@ class Settings(BaseSettings):
             )
 
     def ensure_directories(self) -> None:
-        self.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
-        self.filestore_root.mkdir(parents=True, exist_ok=True)
+        # Guarded per backend, not unconditional: a Catalyst AppSail sandbox
+        # may not offer a writable app directory, and there is no reason to
+        # touch the local sqlite/filestore paths when neither is selected.
+        if self.datastore_backend is DataStoreBackend.SQLITE:
+            self.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+        if self.filestore_backend is FileStoreBackend.LOCAL:
+            self.filestore_root.mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache(maxsize=1)

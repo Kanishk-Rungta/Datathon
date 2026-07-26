@@ -1,7 +1,10 @@
 {
-  "name": "cip-console",
-  "stack": "node18",
-  "command": "node server.js",
-  "port": 9000,
-  "comment": "Serves the built React console and forwards /api to the cip_api function."
+	"command": "node server.js",
+	"build_path": "./",
+	"stack": "node18",
+	"env_variables": {
+		"CIP_API_URL": "https://cip-api-50044361857.development.catalystappsail.in"
+	},
+	"memory": 256,
+	"scripts": {}
 }
