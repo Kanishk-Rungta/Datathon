@@ -315,6 +315,19 @@ class EntityResolver:
         if GENDER_VETO and gender_compat == 0.0:
             score = 0.0
             features["vetoed_by"] = "gender"
+        elif initial_compat == 0.0:
+            # Both records carry initials and they do not overlap. In Kannada
+            # naming the initial usually encodes a patronymic or village, so
+            # "K. Prakash Naik" and "M. Prakash Naik" are more likely two
+            # people than one. The name features alone would score this at
+            # 0.94 and auto-link it, fusing two histories irreversibly in the
+            # officer's view of the record.
+            #
+            # This is a demotion to the review band, not a veto: initials are
+            # also transcribed inconsistently, so a human should decide rather
+            # than the pair being either auto-linked or silently dropped.
+            score = min(score, self._tau_high - 0.01)
+            features["demoted_by"] = "conflicting_initials"
         features["score"] = round(score, 4)
         return features
 
