@@ -516,13 +516,17 @@ CREATE TABLE IF NOT EXISTS cip_conversation_turn (
 );
 CREATE INDEX IF NOT EXISTS ix_conversation_user ON cip_conversation_turn (user_id, created_at);
 
+-- `kv_key`, not `key`: Catalyst Data Store rejects `key` as a reserved
+-- keyword ("Column name cannot contain reserved keywords"), found when
+-- provisioning the live schema. Renamed here rather than mapped per-backend
+-- so both backends keep one column name. See migration 4.
 CREATE TABLE IF NOT EXISTS cip_kv (
     namespace         TEXT NOT NULL,
-    key               TEXT NOT NULL,
+    kv_key            TEXT NOT NULL,
     value_json        TEXT NOT NULL,
     expires_at        TEXT,
     updated_at        TEXT NOT NULL,
-    PRIMARY KEY (namespace, key)
+    PRIMARY KEY (namespace, kv_key)
 );
 CREATE INDEX IF NOT EXISTS ix_kv_expiry ON cip_kv (expires_at);
 

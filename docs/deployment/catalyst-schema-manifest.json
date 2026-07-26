@@ -874,7 +874,7 @@
           "references": null
         },
         {
-          "name": "key",
+          "name": "kv_key",
           "type": "TEXT",
           "primary_key": true,
           "not_null": true,
@@ -3197,6 +3197,14 @@
       "unique": false,
       "columns": [
         "approval_status"
+      ]
+    },
+    {
+      "name": "ix_kv_expiry",
+      "table": "cip_kv",
+      "unique": false,
+      "columns": [
+        "expires_at"
       ]
     }
   ]

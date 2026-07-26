@@ -215,12 +215,12 @@ _Composite primary key: session_id, turn_seq -- see note above._
 | computed_at | Text | - | Y | - |
 
 ### `cip_kv`  (5 columns)
-_Composite primary key: namespace, key -- see note above._
+_Composite primary key: namespace, kv_key -- see note above._
 
 | Column | Type | Max Len | Mandatory | Unique |
 |---|---|---|---|---|
 | namespace | Text | - | Y | - |
-| key | Text | - | Y | - |
+| kv_key | Text | - | Y | - |
 | value_json | Text | - | Y | - |
 | expires_at | Text | - | - | - |
 | updated_at | Text | - | Y | - |

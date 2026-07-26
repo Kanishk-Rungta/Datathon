@@ -240,6 +240,47 @@ def verify_vendored(staging: Path, required_top_level: tuple[str, ...]) -> None:
           f"{VENDOR_PLATFORM}/py{VENDOR_PYTHON_VERSION})")
 
 
+#: Operator-supplied deployment settings, merged into the staged
+#: app-config.json at build time. Gitignored: it holds OAuth credentials.
+DEPLOY_ENV_FILE = REPO_ROOT / "catalyst" / "deploy.env"
+
+
+def inject_deploy_secrets(app_config_path: Path) -> None:
+    """Merge ``catalyst/deploy.env`` into the staged app-config's env_variables.
+
+    `catalyst deploy` pushes whatever `env_variables` the artifact declares,
+    which means values set by hand in the Catalyst console are overwritten on
+    the next deploy. Rather than ask an operator to re-enter secrets after
+    every release, they live in one gitignored file on the deployment machine
+    and are injected here -- so the artifact is the single source of truth and
+    the committed app-config.json never contains a credential.
+    """
+    if not DEPLOY_ENV_FILE.exists():
+        print(f"note: {DEPLOY_ENV_FILE.name} not found -- staging app-config.json unchanged. "
+              "Catalyst-backed deployment needs it; see docs/deployment/v3-phase-d3-runtime.md.")
+        return
+
+    overrides: dict[str, str] = {}
+    # utf-8-sig, not utf-8: PowerShell's `Out-File -Encoding utf8` writes a
+    # BOM, which would otherwise make the first key `﻿KSPCIP_...` -- a
+    # different key that silently fails to override anything.
+    for raw in DEPLOY_ENV_FILE.read_text(encoding="utf-8-sig").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        overrides[key.strip()] = value.strip().strip('"').strip("'")
+
+    config = json.loads(app_config_path.read_text(encoding="utf-8"))
+    env = dict(config.get("env_variables") or {})
+    env.update(overrides)
+    config["env_variables"] = env
+    app_config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    # Names only -- printing a value here would defeat the point of the file.
+    print(f"Injected {len(overrides)} deployment variable(s) from {DEPLOY_ENV_FILE.name}: "
+          f"{', '.join(sorted(overrides))}")
+
+
 SECRET_PATTERNS = ("api_key", "secret", "refresh_token", "oauth")
 
 
@@ -291,6 +332,9 @@ def build(target: str, output: Path, *, python_executable: str, check_only: bool
             src = source_dir / extra
             if src.exists():
                 shutil.copy2(src, output / extra)
+
+        if (output / "app-config.json").exists():
+            inject_deploy_secrets(output / "app-config.json")
 
     if is_python:
         verify_compiles(output)

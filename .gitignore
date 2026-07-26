@@ -20,3 +20,7 @@ backend/var/filestore/audio/
 
 # Catalyst CLI local project link (machine-specific, not a secret but not shared state)
 .catalystrc
+
+# Deployment secrets (OAuth client/refresh token) merged into the built
+# artifact by scripts/build_catalyst_artifact.py. Never commit this.
+catalyst/deploy.env

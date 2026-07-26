@@ -33,56 +33,19 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { REPO_ROOT, sleep, connect, readProject } = require('./lib/catalyst-api');
 
-const REPO_ROOT = path.resolve(__dirname, '..');
 const MANIFEST = path.join(REPO_ROOT, 'docs/deployment/catalyst-schema-manifest.json');
-const CATALYSTRC = path.join(REPO_ROOT, '.catalystrc');
 const PROBE_TABLE = 'zz_provision_probe';
 
 const DRY_RUN = process.argv.includes('--dry-run');
+const VERIFY_ONLY = process.argv.includes('--verify');
 
-// ---------------------------------------------------------------- CLI module
-// Resolved from the globally installed CLI rather than vendored, so this
-// always matches the CLI the operator is actually logged in with.
-function cliLibDir() {
-  const override = process.env.ZCATALYST_CLI_LIB;
-  if (override) return override;
-  const root = execSync('npm root -g', { encoding: 'utf8' }).trim();
-  const lib = path.join(root, 'zcatalyst-cli', 'lib');
-  if (!fs.existsSync(lib)) {
-    throw new Error(
-      `Could not find the Catalyst CLI at ${lib}. Install it with ` +
-      '`npm install -g zcatalyst-cli`, or set ZCATALYST_CLI_LIB.'
-    );
-  }
-  return lib;
+/** Create a column, retrying throttled failures (see callWithRetry). */
+function createColumnWithRetry(api, tableId, payload) {
+  return api.callWithRetry('POST', `${api.tableUrl}/${tableId}/column`, payload);
 }
 
-/** Authenticate exactly the way the CLI's own command_needs/auth.js does. */
-async function getAccessToken(lib, dc) {
-  const configStore = require(path.join(lib, 'util_modules/config-store.js')).default;
-  const credential = require(path.join(lib, 'authentication/credential.js')).default;
-  const stored = configStore.get(`${dc}.credential`);
-  if (typeof stored !== 'string') {
-    throw new Error(`No stored Catalyst credential for DC '${dc}'. Run \`catalyst login\`.`);
-  }
-  credential.initToken(stored, false);
-  return credential.getAccessToken(); // never logged or persisted by this script
-}
-
-// ------------------------------------------------------------------- project
-function readProject() {
-  if (!fs.existsSync(CATALYSTRC)) {
-    throw new Error(`${CATALYSTRC} not found. Run \`catalyst project:use\` in the repo root.`);
-  }
-  const rc = JSON.parse(fs.readFileSync(CATALYSTRC, 'utf8'));
-  const project = rc.projects.find((p) => p.idx === rc.actives.project) || rc.projects[0];
-  const env = project.env.find((e) => e.idx === rc.actives.env) || project.env[0];
-  // The domain name carries the DC suffix, e.g. "...development" on .in.
-  const dc = /\.zoho\.in|\.in$/.test(project.domain?.name || '') ? 'in' : 'us';
-  return { projectId: project.id, projectName: project.name, envId: env.id, envName: env.name, dc };
-}
 
 // --------------------------------------------------------------- schema plan
 /**
@@ -127,38 +90,6 @@ function buildPlan(manifest) {
   });
 }
 
-// ------------------------------------------------------------------ HTTP
-class Api {
-  constructor({ base, token, projectId, envId, envName }) {
-    this.tableUrl = `${base}/baas/v1/project/${projectId}/table`;
-    this.headers = {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.catalyst.v2+json',
-      'X-CATALYST-Environment': envName,
-      'CATALYST-ORG': envId,
-      'Content-Type': 'application/json',
-    };
-  }
-
-  async call(method, url, body) {
-    const res = await fetch(url, {
-      method,
-      headers: this.headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const text = await res.text();
-    let parsed;
-    try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
-    return { ok: res.status >= 200 && res.status < 300, status: res.status, body: parsed, text };
-  }
-
-  listTables() { return this.call('GET', this.tableUrl); }
-  createTable(name) { return this.call('POST', this.tableUrl, { table_name: name }); }
-  deleteTable(id) { return this.call('DELETE', `${this.tableUrl}/${id}`); }
-  listColumns(id) { return this.call('GET', `${this.tableUrl}/${id}/column`); }
-  createColumn(id, payload) { return this.call('POST', `${this.tableUrl}/${id}/column`, payload); }
-}
-
 /**
  * Candidate column payloads, most-specific first.
  *
@@ -168,7 +99,11 @@ class Api {
  * the exact field set is not documented anywhere.
  */
 function columnPayloadCandidates(tableId, tableName, col) {
-  const core = {
+  // The IaC project template (`catalyst iac:export`) renders these as JSON
+  // numbers, while the GET response renders them as strings. The first live
+  // probe sent strings and every array variant came back INVALID_INPUT, so
+  // numeric is tried first here.
+  const numeric = {
     table_id: tableId,
     table_name: tableName,
     column_name: col.name,
@@ -177,25 +112,31 @@ function columnPayloadCandidates(tableId, tableName, col) {
     is_unique: col.isUnique,
     search_index_enabled: false,
     audit_consent: false,
-    decimal_digits: '2',
+    decimal_digits: 2,
   };
-  if (col.maxLength !== undefined) core.max_length = String(col.maxLength);
+  if (col.maxLength !== undefined) numeric.max_length = col.maxLength;
 
-  const trimmed = {
-    table_id: tableId,
-    column_name: col.name,
-    data_type: col.dataType,
-    is_mandatory: col.isMandatory,
-    is_unique: col.isUnique,
+  const numericNoTable = { ...numeric };
+  delete numericNoTable.table_id;
+  delete numericNoTable.table_name;
+
+  const minimal = { column_name: col.name, data_type: col.dataType };
+  if (col.maxLength !== undefined) minimal.max_length = col.maxLength;
+
+  const stringy = {
+    ...numeric,
+    decimal_digits: '2',
+    ...(col.maxLength !== undefined ? { max_length: String(col.maxLength) } : {}),
   };
-  if (col.maxLength !== undefined) trimmed.max_length = String(col.maxLength);
 
   return [
-    ['array-of-full', [core]],
-    ['array-of-trimmed', [trimmed]],
-    ['array-with-columns-key', [{ ...core, columns: undefined }]],
-    ['object-full', core],
-    ['wrapped-columns', { columns: [core] }],
+    ['array numeric +table', [numeric]],
+    ['array numeric -table', [numericNoTable]],
+    ['array minimal', [minimal]],
+    ['array stringy', [stringy]],
+    ['object numeric', numeric],
+    ['wrapped columns numeric', { columns: [numeric] }],
+    ['wrapped column_details', { column_details: [numeric] }],
   ];
 }
 
@@ -217,7 +158,7 @@ async function discoverColumnShape(api, log) {
     };
     for (const [label, payload] of columnPayloadCandidates(tid, PROBE_TABLE, probeCol)) {
       const res = await api.createColumn(tid, payload);
-      log(`  ${label}: ${res.status}${res.ok ? '  <-- accepted' : ` ${JSON.stringify(res.body).slice(0, 110)}`}`);
+      log(`  ${label.padEnd(24)} ${res.status} ${res.ok ? '<-- ACCEPTED' : res.text}`);
       if (res.ok) return label;
     }
     throw new Error(
@@ -227,6 +168,44 @@ async function discoverColumnShape(api, log) {
   } finally {
     await api.deleteTable(tid); // never leave the scratch table behind
   }
+}
+
+/** Compare the live schema against the manifest and report every gap. */
+async function verifySchema(api, plan, log) {
+  const list = await api.listTables();
+  const byName = new Map((list.body.data || []).map((t) => [t.table_name, t.table_id]));
+
+  let expected = 0, present = 0, missingTables = 0;
+  const gaps = [];
+
+  for (const t of plan) {
+    expected += t.columns.length;
+    const tid = byName.get(t.table);
+    if (tid === undefined) {
+      missingTables++;
+      gaps.push(`${t.table}: TABLE MISSING (${t.columns.length} columns)`);
+      continue;
+    }
+    const cols = await api.listColumns(tid);
+    const have = new Set((cols.body.data || []).map((c) => c.column_name.toLowerCase()));
+    const missing = t.columns.filter((c) => !have.has(c.name.toLowerCase()));
+    present += t.columns.length - missing.length;
+    if (missing.length) {
+      gaps.push(`${t.table}: ${missing.length}/${t.columns.length} missing -> ${missing.map((m) => m.name).join(', ')}`);
+    }
+  }
+
+  log('\n===== VERIFICATION =====');
+  log(`Tables : ${plan.length - missingTables}/${plan.length} present`);
+  log(`Columns: ${present}/${expected} present`);
+  if (gaps.length) {
+    log(`\nIncomplete (${gaps.length} tables):`);
+    for (const g of gaps) log('  - ' + g);
+    log('\nRe-run this script to fill the gaps; it only creates what is missing.');
+  } else {
+    log('\nSchema matches the manifest exactly.');
+  }
+  return gaps.length === 0;
 }
 
 function payloadFor(shapeLabel, tableId, tableName, col) {
@@ -239,15 +218,12 @@ function payloadFor(shapeLabel, tableId, tableName, col) {
 async function main() {
   const log = (...a) => console.log(...a);
   const project = readProject();
-  const lib = cliLibDir();
-  process.env.CATALYST_ACTIVE_DC = process.env.CATALYST_ACTIVE_DC || project.dc;
-
   const manifest = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
   const plan = buildPlan(manifest);
   const totalCols = plan.reduce((n, t) => n + t.columns.length, 0);
 
   log(`Project : ${project.projectName} (${project.projectId})`);
-  log(`Env     : ${project.envName} (${project.envId})  DC=${project.dc}`);
+  log(`Env     : ${project.envName} (${project.envId})`);
   log(`Manifest: ${plan.length} tables, ${totalCols} columns\n`);
 
   if (DRY_RUN) {
@@ -258,16 +234,19 @@ async function main() {
             `${c.isMandatory ? ' mandatory' : ''}${c.isUnique ? ' unique' : ''}`);
       }
     }
-    log('\n--dry-run: nothing was sent to Catalyst.');
+    log('\n--dry-run: no Catalyst CLI, credential or network access was used.');
     return;
   }
 
-  const token = await getAccessToken(lib, project.dc);
-  const base = require(path.join(lib, 'util_modules/constants')).ORIGIN.admin;
-  const api = new Api({
-    base, token,
-    projectId: project.projectId, envId: project.envId, envName: project.envName,
-  });
+  // Deliberately after the dry-run return: previewing the plan needs only the
+  // local manifest, so it must not require a CLI install or a login.
+  const api = await connect(log);
+
+  if (VERIFY_ONLY) {
+    const ok = await verifySchema(api, plan, log);
+    process.exitCode = ok ? 0 : 1;
+    return;
+  }
 
   const shape = await discoverColumnShape(api, log);
   log(`Using column payload shape: ${shape}\n`);
@@ -295,12 +274,13 @@ async function main() {
 
     for (const col of t.columns) {
       if (have.has(col.name.toLowerCase())) { skipped++; continue; }
-      const res = await api.createColumn(tid, payloadFor(shape, tid, t.table, col));
+      const res = await createColumnWithRetry(api, tid, payloadFor(shape, tid, t.table, col));
       if (res.ok) {
         createdCols++;
       } else {
         failures.push(`${t.table}.${col.name} (${col.dataType}): ${JSON.stringify(res.body).slice(0, 160)}`);
       }
+      await sleep(150); // pace the loop; the API throttles under a tight burst
     }
   }
 
@@ -308,13 +288,15 @@ async function main() {
   log(`Columns created: ${createdCols}`);
   log(`Already present: ${skipped}`);
   if (failures.length) {
-    log(`\n${failures.length} FAILURE(S):`);
-    for (const f of failures.slice(0, 40)) log('  - ' + f);
-    if (failures.length > 40) log(`  ... and ${failures.length - 40} more`);
-    process.exitCode = 1;
-  } else {
-    log('\nAll tables and columns are present.');
+    log(`\n${failures.length} FAILURE(S) this run:`);
+    for (const f of failures.slice(0, 15)) log('  - ' + f);
+    if (failures.length > 15) log(`  ... and ${failures.length - 15} more`);
   }
+
+  // Always re-read the live schema rather than trusting this run's own
+  // counters -- the question that matters is what Catalyst actually has.
+  const complete = await verifySchema(api, plan, log);
+  process.exitCode = complete ? 0 : 1;
 }
 
 main().catch((e) => { console.error('FAILED:', e.message); process.exit(1); });

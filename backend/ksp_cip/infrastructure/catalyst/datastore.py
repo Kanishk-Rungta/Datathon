@@ -285,10 +285,15 @@ class CatalystDataStore:
             with urllib_request.urlopen(request, timeout=45) as response:
                 return json.loads(response.read().decode("utf-8"))
         except urllib_error.HTTPError as exc:  # pragma: no cover - network path
-            detail = exc.read().decode("utf-8", errors="replace")[:400]
-            LOGGER.error("catalyst_http_error", extra={"status": exc.code, "path": path})
-            raise ProviderError("Catalyst request failed", provider="catalyst",
-                                status=exc.code, detail=detail) from exc
+            body = exc.read().decode("utf-8", errors="replace")[:400]
+            LOGGER.error("catalyst_http_error",
+                         extra={"status": exc.code, "path": path, "body": body})
+            # `detail` is CIPError's first positional parameter, so passing it
+            # as a keyword here collided and raised TypeError -- which threw
+            # away the upstream response and made every Catalyst HTTP failure
+            # unreadable. The response body goes in as `response_body`.
+            raise ProviderError(f"Catalyst request failed: {body}", provider="catalyst",
+                                status=exc.code, path=path, response_body=body) from exc
         except urllib_error.URLError as exc:  # pragma: no cover - network path
             raise ProviderError("Catalyst is unreachable", provider="catalyst") from exc
 

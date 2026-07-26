@@ -130,9 +130,45 @@ Zoho's own documentation, and the CLI's own source):**
   index, so it is expressible as `Is Unique` on that one `Var Char` column.
   This is a hard platform gap, not an open item — any query that depended on
   one of the other 45 indexes for performance will do a full scan on Catalyst.
-- `ctl_schema_version`, referenced in step 4 above, **does not exist** in
-  `schema.sql` or the generated manifest. It was never implemented. Either add
-  it to the real schema before relying on this step, or drop the step.
+- **ZCQL cannot join on natural keys, and foreign keys do not fix it.** This
+  is the finding that decides whether the application can run on Catalyst
+  Data Store at all, so it is recorded in full:
+
+  ```text
+  SELECT ... FROM curated_Unit u LEFT JOIN curated_District d
+    ON d.DistrictID = u.DistrictID
+  -> 400  ZCQL QUERY ERROR: "No relationship between tables d and u"
+  ```
+
+  ZCQL only joins tables that have a declared foreign-key relationship. But a
+  Catalyst foreign key references the parent's **`ROWID`** — the 17-digit id
+  Catalyst generates — not the parent's business key. Provisioning
+  `curated_Unit.DistrictID` as a real Foreign Key column against
+  `curated_District` was tried live, and the only accepted join was:
+
+  ```text
+  ON curated_District.ROWID = curated_Unit.DistrictID   -> 200, every DistrictName null
+  ```
+
+  Null on every row, because the column holds `DistrictID` values `1…31`,
+  which are not ROWIDs. Making this work would mean loading parents first,
+  capturing their generated ROWIDs, rewriting all 39 foreign-key values in
+  child rows, and rewriting the application's 53 joins to join on ROWID —
+  i.e. replacing the organiser's natural-key identity model, which evidence
+  locators and the audit trail are built on.
+
+  So the 39 foreign-key columns are deliberately left as plain `bigint`, and
+  the relationships stay documentation of intent. Referential integrity is
+  enforced where it already was: SQLite runs with `PRAGMA foreign_keys = ON`,
+  and the pipeline's `orphan_case_reference` DQ check is a **BLOCKER** in
+  both backends. A Catalyst-backed deployment must therefore either avoid
+  multi-table joins in the repository layer or accept this limitation; it is
+  not something further provisioning can resolve.
+
+- `ctl_schema_version` **is** created, but imperatively by
+  `migrations._ensure_version_table()` rather than in `schema.sql`, so it does
+  not appear in the generated manifest and was not provisioned to Catalyst.
+  Step 4 above therefore cannot be followed as written.
 - Every new table arrives with 4 system columns already present: `ROWID`
   (bigint, the actual storage primary key), `CREATORID` (bigint),
   `CREATEDTIME` (datetime), `MODIFIEDTIME` (datetime). Application primary

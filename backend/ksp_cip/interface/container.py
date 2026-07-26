@@ -166,7 +166,7 @@ def build_container(settings: Settings | None = None) -> Container:
 
     clock = SystemClock()
     store = _build_store(settings)
-    apply_migrations(store)
+    _prepare_schema(settings, store)
     filestore = _build_filestore(settings)
 
     reference = ReferenceRepository(store)
@@ -278,6 +278,26 @@ def build_container(settings: Settings | None = None) -> Container:
         refresher=refresher,
         seeder=seeder, dq=dq,
     )
+
+
+def _prepare_schema(settings: Settings, store: DataStore) -> None:
+    """Migrate the schema, or verify it -- never both.
+
+    SQLite is this process's own file, so it owns and migrates it. A Catalyst
+    project is shared infrastructure provisioned through a reviewed step, and
+    ``CatalystDataStore`` has no ``executescript`` precisely so a running API
+    cannot issue DDL against it. Calling ``apply_migrations`` unconditionally
+    is what made the first Catalyst-backed deployment fail to boot:
+    ``AttributeError: 'CatalystDataStore' object has no attribute
+    'executescript'``.
+    """
+    from ..config.settings import DataStoreBackend
+    from ..infrastructure.db.migrations import verify_provisioned_schema
+
+    if settings.datastore_backend is DataStoreBackend.SQLITE:
+        apply_migrations(store)
+    else:
+        verify_provisioned_schema(store)
 
 
 def _build_store(settings: Settings) -> DataStore:
