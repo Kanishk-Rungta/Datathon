@@ -34,6 +34,29 @@ def validate_key(key: str) -> str:
     return cleaned
 
 
+def _bucket_origin(settings: Settings) -> str:
+    """The host Stratus objects actually live on.
+
+    Stratus is not served from the Data Store's ``/baas/v1/project/...`` API.
+    Each bucket has its own origin, and the environment is part of the
+    hostname rather than a header:
+
+        https://<bucket>-development.zohostratus.<dc>/<object>
+
+    Addressing it the way the rest of the Catalyst API is addressed returns
+    404 for every request, including writes -- which is what broke PDF export.
+    Confirmed live: ``cip-ingest-development.zohostratus.in`` accepts a PUT,
+    while ``cip-ingest.zohostratus.in`` answers ``bucket_not_found``. The
+    shape matches the Catalyst CLI's own uploader (``endpoints/lib/stratus.js``).
+    """
+    host = urllib_parse.urlparse(settings.catalyst_base_url).hostname or "api.catalyst.zoho.com"
+    data_centre = host.rsplit(".", 1)[-1]          # api.catalyst.zoho.in -> "in"
+    environment = (settings.catalyst_environment or "").strip().lower()
+    # Only non-production environments carry a suffix, as the CLI does it.
+    suffix = f"-{environment}" if environment and environment != "production" else ""
+    return f"https://{settings.catalyst_stratus_bucket}{suffix}.zohostratus.{data_centre}"
+
+
 class StratusFileStore:
     backend = "stratus"
 
@@ -41,10 +64,7 @@ class StratusFileStore:
         self._settings = settings
         self._auth = auth or CatalystAuth(settings)
         self._bucket = settings.catalyst_stratus_bucket
-        self._base = (
-            f"{settings.catalyst_base_url.rstrip('/')}"
-            f"/baas/v1/project/{settings.catalyst_project_id}/bucket/{self._bucket}/object"
-        )
+        self._base = _bucket_origin(settings)
 
     def write_bytes(self, key: str, payload: bytes, content_type: str = "application/octet-stream") -> str:
         cleaned = validate_key(key)
@@ -80,15 +100,30 @@ class StratusFileStore:
         url = f"{self._base}{key if raw_path else '/' + urllib_parse.quote(key)}"
         request = urllib_request.Request(url, data=payload, method=method)
         request.add_header("Authorization", f"Zoho-oauthtoken {self._auth.token()}")
-        request.add_header("ENVIRONMENT", self._settings.catalyst_environment)
+        # The environment is part of the hostname here, not a header, and the
+        # bucket origin is outside the Catalyst API -- so the usual
+        # ENVIRONMENT/Accept headers do not apply. `compress: false` is what
+        # the Catalyst CLI's own uploader sends.
+        request.add_header("compress", "false")
         if content_type:
             request.add_header("Content-Type", content_type)
         try:
             with urllib_request.urlopen(request, timeout=60) as response:
                 return response.read()
         except urllib_error.HTTPError as exc:  # pragma: no cover - network path
-            if exc.code == 404:
+            body = exc.read().decode("utf-8", errors="replace")[:200]
+            # Only a read can legitimately 404 on a missing object. A 404 on a
+            # write means the bucket or endpoint is wrong, and reporting that
+            # as "object not found" sent an earlier investigation the wrong
+            # way entirely.
+            if exc.code == 404 and method == "GET":
                 raise NotFoundError("Object not found in Stratus", key=key) from exc
-            raise ProviderError("Stratus request failed", provider="stratus", status=exc.code) from exc
+            if exc.code == 404:
+                raise ProviderError(
+                    f"Stratus rejected {method} {url}: {body or 'not found'}. "
+                    "Check the bucket name and environment.",
+                    provider="stratus", status=404, key=key) from exc
+            raise ProviderError(f"Stratus request failed: {body}", provider="stratus",
+                                status=exc.code, key=key) from exc
         except urllib_error.URLError as exc:  # pragma: no cover - network path
             raise ProviderError("Stratus is unreachable", provider="stratus") from exc

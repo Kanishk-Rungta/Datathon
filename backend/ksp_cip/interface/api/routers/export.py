@@ -63,14 +63,16 @@ def export_pdf(
     container.audit.record(
         action="export.pdf", principal=principal, object_type="export",
         object_ids=[result["key"]], outcome="success",
-        detail={"bytes": result.get("bytes"), "session_id": payload.session_id,
+        # `size_bytes` is the key the PDF service returns; reading "bytes"
+        # logged None into the audit trail and reported 0 to the caller.
+        detail={"bytes": result.get("size_bytes"), "session_id": payload.session_id,
                 "case_master_id": payload.case_master_id},
     )
     return ExportResponse(
         url=container.filestore.url_for(result["key"]),
         key=result["key"],
         filename=filename,
-        bytes=int(result.get("bytes", 0)),
+        bytes=int(result.get("size_bytes", 0)),
         kannada_glyphs_embedded=container.pdf.supports_kannada_glyphs,
         notice=NOTICE,
     )
