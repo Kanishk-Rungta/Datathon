@@ -103,11 +103,21 @@ class Api {
   }
 
   async call(method, url, body) {
-    const res = await fetch(url, {
-      method,
-      headers: this.headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    // A dropped connection surfaces as a thrown TypeError ("fetch failed"),
+    // not an HTTP status, so it bypasses status-based retry entirely and
+    // killed a full data load partway through. Transport errors are reported
+    // as a synthetic 0 so callers can retry them like any other failure.
+    let res;
+    try {
+      res = await fetch(url, {
+        method,
+        headers: this.headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch (err) {
+      return { ok: false, status: 0, body: { transport_error: String(err.message) },
+               text: `transport error: ${err.message}` };
+    }
     const text = await res.text();
     let parsed;
     try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
@@ -129,7 +139,9 @@ class Api {
       if (res.ok) return res;
       last = res;
       const code = res.body && res.body.data && res.body.data.error_code;
-      const retriable = res.status >= 500 || res.status === 429 || code === 'INTERNAL_SERVER_ERROR';
+      const retriable = res.status === 0            // transport error, see call()
+        || res.status >= 500 || res.status === 429
+        || code === 'INTERNAL_SERVER_ERROR';
       if (!retriable) return res;
       await sleep(500 * 2 ** i); // 0.5s, 1s, 2s, 4s, 8s
     }

@@ -130,9 +130,9 @@ Zoho's own documentation, and the CLI's own source):**
   index, so it is expressible as `Is Unique` on that one `Var Char` column.
   This is a hard platform gap, not an open item — any query that depended on
   one of the other 45 indexes for performance will do a full scan on Catalyst.
-- **ZCQL cannot join on natural keys, and foreign keys do not fix it.** This
-  is the finding that decides whether the application can run on Catalyst
-  Data Store at all, so it is recorded in full:
+- **ZCQL joins only through declared foreign keys — and the foreign key must
+  target the parent's business key, not its ROWID.** Without a declared
+  relationship every join fails:
 
   ```text
   SELECT ... FROM curated_Unit u LEFT JOIN curated_District d
@@ -140,30 +140,34 @@ Zoho's own documentation, and the CLI's own source):**
   -> 400  ZCQL QUERY ERROR: "No relationship between tables d and u"
   ```
 
-  ZCQL only joins tables that have a declared foreign-key relationship. But a
-  Catalyst foreign key references the parent's **`ROWID`** — the 17-digit id
-  Catalyst generates — not the parent's business key. Provisioning
-  `curated_Unit.DistrictID` as a real Foreign Key column against
-  `curated_District` was tried live, and the only accepted join was:
+  The trap: the Catalyst **console's** New Column dialog asks only for a
+  parent *table* and silently targets that table's `ROWID`. A key created
+  that way makes natural-key joins look impossible — the join is accepted
+  only as `ON curated_District.ROWID = curated_Unit.DistrictID`, and returns
+  null for every parent row, because the column holds `DistrictID` values,
+  not ROWIDs.
 
-  ```text
-  ON curated_District.ROWID = curated_Unit.DistrictID   -> 200, every DistrictName null
-  ```
+  The **API** accepts a `parent_column`, and it may be any uniquely
+  constrained column. Pointing it at `curated_District.DistrictID` — exactly
+  the relationship the organiser's ER diagram specifies — makes
+  `ON d.DistrictID = u.DistrictID` work against real data, with no change to
+  the schema, the identity model, or any query.
+  `scripts/provision_catalyst_datastore.js --foreign-keys` provisions all 39
+  this way. Required payload fields: `parent_table`, `parent_column` and
+  `constraint_type`.
 
-  Null on every row, because the column holds `DistrictID` values `1…31`,
-  which are not ROWIDs. Making this work would mean loading parents first,
-  capturing their generated ROWIDs, rewriting all 39 foreign-key values in
-  child rows, and rewriting the application's 53 joins to join on ROWID —
-  i.e. replacing the organiser's natural-key identity model, which evidence
-  locators and the audit trail are built on.
+  Three constraints worth knowing:
 
-  So the 39 foreign-key columns are deliberately left as plain `bigint`, and
-  the relationships stay documentation of intent. Referential integrity is
-  enforced where it already was: SQLite runs with `PRAGMA foreign_keys = ON`,
-  and the pipeline's `orphan_case_reference` DQ check is a **BLOCKER** in
-  both backends. A Catalyst-backed deployment must therefore either avoid
-  multi-table joins in the repository layer or accept this limitation; it is
-  not something further provisioning can resolve.
+  * `constraint_type` accepts only `ON-DELETE-SET-NULL` or
+    `ON-DELETE-CASCADE`; `RESTRICT`/`NO-ACTION` are rejected. `SET-NULL` is
+    used throughout — cascading would let deleting one district remove its
+    police units and, through them, case references.
+  * A foreign-key column is always `bigint`, whatever the parent's type. The
+    one TEXT relationship (`curated_Section.ActCode -> curated_Act.ActCode`)
+    therefore stays a plain text column and is enforced by the application.
+  * Inserts are validated against the parent, so **rows must be loaded
+    parent-first**. `scripts/load_catalyst_data.js` topologically sorts the
+    tables for this reason.
 
 - `ctl_schema_version` **is** created, but imperatively by
   `migrations._ensure_version_table()` rather than in `schema.sql`, so it does

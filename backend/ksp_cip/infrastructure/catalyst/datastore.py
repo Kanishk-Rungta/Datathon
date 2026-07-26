@@ -24,6 +24,7 @@ rather than implied otherwise.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from contextlib import contextmanager
@@ -143,6 +144,134 @@ def _strip_literals(sql: str) -> str:
     return "".join(out)
 
 
+_SELECT_LIST_RE = re.compile(r"^\s*SELECT\s+(?P<cols>.*?)\s+FROM\s", re.IGNORECASE | re.DOTALL)
+_ALIAS_RE = re.compile(r"^(?P<expr>.*?)\s+AS\s+(?P<alias>\w+)\s*$", re.IGNORECASE | re.DOTALL)
+
+
+def _split_select_items(columns: str) -> list[str]:
+    """Split a SELECT list on commas that are not inside parentheses."""
+    items, depth, current = [], 0, []
+    for char in columns:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        if char == "," and depth == 0:
+            items.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    if current:
+        items.append("".join(current))
+    return items
+
+
+def _normalise_key(expr: str) -> str:
+    """The key ZCQL will actually return for a selected expression."""
+    expr = expr.strip()
+    if re.fullmatch(r"[\w.]+", expr):
+        return expr.rsplit(".", 1)[-1]        # `c.CaseMasterID` -> `CaseMasterID`
+    return re.sub(r"\s+", "", expr)            # `COUNT( ROWID )` -> `COUNT(ROWID)`
+
+
+def _translate_aggregates(statement: str) -> tuple[str, dict[str, str]]:
+    """Bring a SELECT into the dialect ZCQL actually accepts.
+
+    Two differences, both invisible until a query runs against a live project:
+
+    * ``COUNT(*)`` is rejected outright — *"\\* is not supported in Functions.
+      Please give a valid column name"*. Every table has ``ROWID``, so
+      ``COUNT(ROWID)`` is the portable equivalent.
+    * **``AS alias`` is ignored entirely.** Rows come back keyed by the
+      underlying column or expression, so ``SELECT c.CaseMasterID AS
+      case_master_id`` yields ``CaseMasterID`` and a caller reading
+      ``row["case_master_id"]`` raises ``KeyError``. This is not limited to
+      aggregates; it applies to every aliased column.
+
+    Handled here rather than in the call sites so repositories stay written in
+    one dialect, the same reasoning as the upsert emulation below.
+    """
+    translated = re.sub(r"COUNT\s*\(\s*\*\s*\)", "COUNT(ROWID)", statement, flags=re.IGNORECASE)
+
+    match = _SELECT_LIST_RE.search(translated)
+    if not match:
+        return translated, {}
+
+    aliases: dict[str, str] = {}
+    expressions: dict[str, str] = {}
+    for item in _split_select_items(match.group("cols")):
+        aliased = _ALIAS_RE.match(item.strip())
+        if aliased:
+            expr, alias = aliased.group("expr").strip(), aliased.group("alias")
+            aliases[_normalise_key(expr)] = alias
+            expressions[alias] = expr
+    return _expand_alias_references(translated, expressions), aliases
+
+
+def _expand_alias_references(statement: str, expressions: dict[str, str]) -> str:
+    """Replace alias references in GROUP BY / ORDER BY with their expressions.
+
+    SQLite lets a GROUP BY or ORDER BY name a SELECT alias; ZCQL does not, and
+    reports it as a missing column — *"Unkown Table c or Unkown Column
+    sub_head_id in GROUP BY"*. Roughly ten repository queries are written that
+    way, so the substitution happens here rather than in each of them: the SQL
+    stays readable, and there is one dialect rule in one place.
+    """
+    if not expressions:
+        return statement
+
+    def rewrite(match: re.Match[str]) -> str:
+        clause = match.group(0)
+        for alias, expr in expressions.items():
+            if alias != expr:
+                clause = re.sub(rf"\b{re.escape(alias)}\b", expr, clause)
+        return clause
+
+    return re.sub(r"(?:GROUP|ORDER)\s+BY\s+[^)]*?(?=\s+(?:GROUP|ORDER|LIMIT)\s|\s*$)",
+                  rewrite, statement, flags=re.IGNORECASE)
+
+
+#: A caller's own trailing `LIMIT n [OFFSET m]`, in SQLite's spelling.
+_TRAILING_LIMIT_RE = re.compile(
+    r"\s+LIMIT\s+(?P<limit>\d+)(?:\s+OFFSET\s+(?P<offset>\d+))?\s*$", re.IGNORECASE)
+
+
+def _split_limit(statement: str) -> tuple[str, int | None, int]:
+    """Separate a caller's own LIMIT from the statement, for re-application.
+
+    17 repository queries end in ``LIMIT :limit`` (some with ``OFFSET``). The
+    pager used to append its own clause regardless, producing
+    ``... LIMIT 50 LIMIT 0, 300`` — which ZCQL rejects with *"ZCQL CANNOT HAVE
+    MORE THAN 300 ROWS in LIMIT"*, a message that points at the page size
+    rather than the duplicated clause.
+
+    Returning the caller's bound and offset lets the pager honour both: it
+    stops once that many rows are collected, and still pages underneath when
+    the requested bound exceeds what ZCQL will return in one call.
+    """
+    match = _TRAILING_LIMIT_RE.search(statement)
+    if not match:
+        return statement, None, 0
+    limit = int(match.group("limit"))
+    offset = int(match.group("offset") or 0)
+    return statement[: match.start()], limit, offset
+
+
+def _restore_aliases(rows: list[dict[str, Any]], aliases: dict[str, str]) -> list[dict[str, Any]]:
+    """Re-key aggregate columns to the alias the caller asked for."""
+    if not aliases:
+        return rows
+    restored: list[dict[str, Any]] = []
+    for row in rows:
+        out = dict(row)
+        for key, value in row.items():
+            alias = aliases.get(_normalise_key(key))
+            if alias is not None and alias not in out:
+                out[alias] = value
+        restored.append(out)
+    return restored
+
+
 class CatalystDataStore:
     """DataStore backed by Catalyst Data Store tables via ZCQL."""
 
@@ -161,14 +290,19 @@ class CatalystDataStore:
         statement = bind_named(sql, params or {})
         if statement.lstrip().upper().startswith("PRAGMA"):
             raise CIPError("PRAGMA is not available on the Catalyst Data Store", sql=statement[:120])
+        statement, aliases = _translate_aggregates(statement)
+        statement, want, offset = _split_limit(statement)
+
         rows: list[dict[str, Any]] = []
-        offset = 0
         while True:
-            page = self._zcql(f"{statement} LIMIT {offset}, {ZCQL_PAGE_SIZE}")
-            rows.extend(page)
-            if len(page) < ZCQL_PAGE_SIZE:
+            remaining = ZCQL_PAGE_SIZE if want is None else min(ZCQL_PAGE_SIZE, want - len(rows))
+            if remaining <= 0:
                 break
-            offset += ZCQL_PAGE_SIZE
+            page = self._zcql(f"{statement} LIMIT {offset}, {remaining}")
+            rows.extend(_restore_aliases(page, aliases))
+            if len(page) < remaining:
+                break
+            offset += remaining
         return rows
 
     def execute(self, sql: str, params: Mapping[str, Any] | None = None) -> int:
@@ -178,6 +312,9 @@ class CatalystDataStore:
             upsert = _parse_upsert(statement)
             if upsert is not None:
                 return self._upsert(upsert)
+            replace = _parse_insert_or_replace(statement)
+            if replace is not None:
+                return self._upsert(replace)
             table, values = _parse_insert(statement)
             return len(self._insert_rows(table, [values]))
         if head in {"UPDATE", "DELETE"}:
@@ -396,6 +533,43 @@ def _parse_upsert(statement: str) -> UpsertPlan | None:
     if not updates:
         raise CIPError("ON CONFLICT DO UPDATE has no assignments", sql=statement[:160])
     return UpsertPlan(table=table, values=values, conflict_columns=conflict_columns, updates=updates)
+
+
+def _parse_insert_or_replace(statement: str) -> "UpsertPlan | None":
+    """Turn SQLite's ``INSERT OR REPLACE`` into the upsert plan ZCQL needs.
+
+    Eleven repositories write with ``INSERT OR REPLACE INTO`` -- the pipeline's
+    idempotent-replay idiom. ZCQL has no such statement, and the plain INSERT
+    parser rejected it outright ("Not an INSERT statement"), which is what
+    stopped a conversation turn from ever being saved.
+
+    "Replace the row with this primary key" is exactly an upsert keyed on the
+    primary key, so it reuses ``_upsert`` rather than adding a second
+    read-then-write path -- including that method's non-atomicity caveat.
+    """
+    if not re.match(r"\s*INSERT\s+OR\s+REPLACE\s+INTO\s", statement, re.IGNORECASE):
+        return None
+
+    normalised = re.sub(r"\s*INSERT\s+OR\s+REPLACE\s+INTO\s", "INSERT INTO ",
+                        statement, count=1, flags=re.IGNORECASE)
+    table, values = _parse_insert(normalised)
+
+    from ..db.schema_reflection import schema_primary_keys
+
+    conflict_columns = [c for c in schema_primary_keys().get(table, []) if c in values]
+    if not conflict_columns:
+        # Without a key there is nothing to replace *on*; inserting blindly
+        # would duplicate silently, so refuse rather than corrupt the table.
+        raise CIPError(
+            f"INSERT OR REPLACE on '{table}' has no primary-key column to match on",
+            sql=statement[:160],
+        )
+    return UpsertPlan(
+        table=table,
+        values=values,
+        conflict_columns=conflict_columns,
+        updates={k: v for k, v in values.items() if k not in conflict_columns},
+    )
 
 
 def _parse_insert(statement: str) -> tuple[str, dict[str, Any]]:

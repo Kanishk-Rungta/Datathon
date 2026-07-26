@@ -213,10 +213,15 @@ class SupervisorAgent:
         except AuthorizationError:
             raise
         except CIPError as error:
-            LOGGER.warning("agent_failed", extra={"agent": str(name), "error": error.code})
+            # `.detail`, not `.message` -- CIPError has no `message` attribute,
+            # so this handler raised AttributeError while reporting a failure,
+            # replacing every agent-level error with an opaque 500 and losing
+            # the original cause.
+            LOGGER.warning("agent_failed",
+                           extra={"agent": str(name), "error": error.code, "detail": error.detail})
             return AgentResult(
                 agent=name, intent=request.intent,
-                summary_claims=[claim(f"{name} could not complete this request: {error.message}")],
+                summary_claims=[claim(f"{name} could not complete this request: {error.detail}")],
                 confidence=0.3, warnings=[error.code],
             )
 

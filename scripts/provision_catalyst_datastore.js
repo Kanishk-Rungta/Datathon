@@ -40,6 +40,132 @@ const PROBE_TABLE = 'zz_provision_probe';
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const VERIFY_ONLY = process.argv.includes('--verify');
+const FOREIGN_KEYS = process.argv.includes('--foreign-keys');
+
+//: The only two Catalyst accepts. RESTRICT and NO-ACTION are rejected
+//: (PATTERN_NOT_MATCHED), so the choice is between nulling the reference and
+//: cascading the delete. Cascading would let removing one district delete its
+//: police units -- and through them, case references -- so it is never used.
+const ON_DELETE = 'ON-DELETE-SET-NULL';
+
+/**
+ * Convert the declared foreign-key columns into real Catalyst relationships.
+ *
+ * ZCQL only joins tables that have a declared relationship, so without this
+ * every join in the application fails with "No relationship between tables".
+ *
+ * The subtlety that matters: a Catalyst foreign key can target **any unique
+ * column**, not just the parent's ROWID. The console's dialog only asks for a
+ * parent *table* and silently targets ROWID, which is why a console-created
+ * key appears to make natural-key joins impossible. Targeting the parent's
+ * business key instead -- `curated_District.DistrictID`, exactly as the
+ * organiser's ER diagram specifies -- makes `ON d.DistrictID = u.DistrictID`
+ * work, with no change to the schema or to any query.
+ *
+ * Destructive: a column's type cannot be changed in place, so each one is
+ * dropped and recreated, losing its values. Reload afterwards with
+ * `node scripts/load_catalyst_data.js --truncate`.
+ */
+async function provisionForeignKeys(api, manifest, log) {
+  const list = await api.listTables();
+  const tableIds = new Map((list.body.data || []).map((t) => [t.table_name, t.table_id]));
+  const columnCache = new Map();
+  const columnsOf = async (name) => {
+    if (!columnCache.has(name)) {
+      const res = await api.listColumns(tableIds.get(name));
+      columnCache.set(name, res.body.data || []);
+    }
+    return columnCache.get(name);
+  };
+
+  let created = 0, skipped = 0;
+  const problems = [];
+
+  for (const table of manifest.tables) {
+    const fks = table.columns.filter((c) => c.references);
+    if (!fks.length) continue;
+    const childId = tableIds.get(table.table);
+    if (!childId) { problems.push(`${table.table}: table missing`); continue; }
+
+    for (const col of fks) {
+      const parentName = col.references.table;
+      const parentId = tableIds.get(parentName);
+      if (!parentId) { problems.push(`${table.table}.${col.name}: parent ${parentName} missing`); continue; }
+
+      // A Catalyst foreign-key column is always bigint -- the type is fixed
+      // by the platform, not by the parent it points at. A TEXT key such as
+      // `curated_Section.ActCode -> curated_Act.ActCode` therefore cannot be
+      // one: the column would reject its own values ("bigint value expected").
+      // Left as a plain text column; the relationship stays application-level.
+      if (col.type !== 'INTEGER') {
+        problems.push(
+          `${table.table}.${col.name} -> ${parentName}.${col.references.column} ` +
+          `(${col.type} key; Catalyst foreign keys are bigint-only)`);
+        continue;
+      }
+
+      const parentCols = await columnsOf(parentName);
+      const target = parentCols.find((c) => c.column_name.toLowerCase() === col.references.column.toLowerCase());
+      if (!target) {
+        problems.push(`${table.table}.${col.name}: ${parentName}.${col.references.column} not found`);
+        continue;
+      }
+      // Catalyst can only reference a uniquely-constrained column. Composite
+      // primary keys leave their parts non-unique, so those relationships are
+      // reported rather than forced -- the application enforces them instead.
+      if (String(target.is_unique) !== 'true' && target.is_unique !== true) {
+        problems.push(
+          `${table.table}.${col.name} -> ${parentName}.${target.column_name} ` +
+          `(parent column is not unique; likely part of a composite key)`);
+        continue;
+      }
+
+      const childCols = await api.listColumns(childId);
+      const existing = (childCols.body.data || []).find(
+        (c) => c.column_name.toLowerCase() === col.name.toLowerCase());
+      if (existing && String(existing.data_type).includes('foreign')
+          && String(existing.parent_column) === String(target.column_id)) {
+        skipped++;
+        continue;
+      }
+
+      if (existing) {
+        const del = await api.call('DELETE', `${api.tableUrl}/${childId}/column/${existing.column_id}`);
+        if (!del.ok) {
+          problems.push(`${table.table}.${col.name}: could not drop old column: ${del.text.slice(0, 120)}`);
+          continue;
+        }
+        await sleep(200);
+      }
+
+      const res = await api.callWithRetry('POST', `${api.tableUrl}/${childId}/column`, [{
+        column_name: col.name,
+        data_type: 'foreign key',
+        parent_table: parentId,
+        parent_column: target.column_id,
+        constraint_type: ON_DELETE,
+        is_mandatory: Boolean(col.not_null || col.primary_key),
+      }]);
+      if (res.ok) {
+        created++;
+        log(`  + ${table.table}.${col.name} -> ${parentName}.${target.column_name}`);
+      } else {
+        problems.push(`${table.table}.${col.name}: ${res.text.slice(0, 160)}`);
+      }
+      await sleep(150);
+    }
+  }
+
+  log(`\nForeign keys created: ${created}`);
+  log(`Already correct     : ${skipped}`);
+  if (problems.length) {
+    log(`\n${problems.length} not created:`);
+    for (const p of problems) log('  - ' + p);
+  }
+  log('\nColumns were recreated, so their values are gone. Reload with:');
+  log('  node scripts/load_catalyst_data.js --truncate');
+  return problems.length === 0;
+}
 
 /** Create a column, retrying throttled failures (see callWithRetry). */
 function createColumnWithRetry(api, tableId, payload) {
@@ -244,6 +370,12 @@ async function main() {
 
   if (VERIFY_ONLY) {
     const ok = await verifySchema(api, plan, log);
+    process.exitCode = ok ? 0 : 1;
+    return;
+  }
+
+  if (FOREIGN_KEYS) {
+    const ok = await provisionForeignKeys(api, manifest, log);
     process.exitCode = ok ? 0 : 1;
     return;
   }

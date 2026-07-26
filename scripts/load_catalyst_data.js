@@ -116,10 +116,51 @@ async function clearTable(api, table, log) {
   return removed;
 }
 
+/**
+ * Order tables so every parent loads before its children.
+ *
+ * Once the foreign keys are real relationships, Catalyst validates each
+ * reference on insert -- a row pointing at a parent that is not there yet is
+ * rejected outright. Alphabetical order breaks on the first such pair
+ * (`curated_District` before `curated_State`), and the failure then cascades
+ * to everything referencing the table that failed to load.
+ *
+ * Cycles are tolerated rather than fatal: a table that cannot be ordered is
+ * appended, so a self-reference (`curated_Unit.ParentUnit`) degrades to a few
+ * rejected rows instead of stopping the load.
+ */
+function dependencyOrder(manifest, skip) {
+  const parents = new Map();
+  for (const t of manifest.tables) {
+    parents.set(t.table, new Set(
+      t.columns.filter((c) => c.references && c.references.table !== t.table)
+               .map((c) => c.references.table)));
+  }
+
+  const ordered = [];
+  const placed = new Set();
+  let progress = true;
+  while (progress) {
+    progress = false;
+    for (const [table, deps] of parents) {
+      if (placed.has(table)) continue;
+      if ([...deps].every((d) => placed.has(d) || !parents.has(d))) {
+        ordered.push(table);
+        placed.add(table);
+        progress = true;
+      }
+    }
+  }
+  for (const table of parents.keys()) {
+    if (!placed.has(table)) ordered.push(table); // cyclic -- load last, best effort
+  }
+  return ordered.filter((t) => !skip.has(t));
+}
+
 async function main() {
   const log = (...a) => console.log(...a);
   const manifest = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
-  const planned = manifest.tables.map((t) => t.table).filter((t) => !SKIP_TABLES.has(t));
+  const planned = dependencyOrder(manifest, SKIP_TABLES);
 
   const db = openDb();
   const localTables = new Set(sqliteTables(db));
@@ -176,8 +217,10 @@ async function main() {
 
   // -------------------------------------------------------------- truncate
   if (TRUNCATE) {
+    // Reverse dependency order: clear children before the parents they point
+    // at, so no delete has to null out a reference on the way through.
     log('Clearing target tables...');
-    for (const t of planned) {
+    for (const t of [...planned].reverse()) {
       if (!tableIds.has(t)) continue;
       const removed = await clearTable(api, t, log);
       if (removed > 0) log(`  ${t.padEnd(32)} ${String(removed).padStart(6)} rows deleted`);
