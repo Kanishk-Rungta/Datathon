@@ -57,7 +57,19 @@ export default function App() {
   const exportPdf = useCallback(async () => {
     try {
       const result = await api.exportPdf({ session_id: sessionId })
-      window.open(result.url, '_blank', 'noopener')
+      // The export lives behind `/files/`, which authorizes the caller, so the
+      // bearer token has to travel with the request. `window.open(url)` sends
+      // no header and gets a 401 — fetch the PDF as a blob and hand the browser
+      // that instead, which also gives a proper "save" of a named file.
+      const blobUrl = await api.fetchBlobUrl(result.url)
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = result.filename || 'cip-conversation.pdf'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      // Revoke on the next tick so the download has grabbed the blob first.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000)
     } catch (err) {
       setError(err.message)
     }

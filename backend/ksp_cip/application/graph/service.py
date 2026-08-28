@@ -247,6 +247,79 @@ class GraphService:
         results.sort(key=lambda item: item["size"], reverse=True)
         return results[:limit]
 
+    def communities_view(
+        self,
+        communities: list[dict[str, Any]],
+        scope: UnitScope,
+        *,
+        max_members_per_cluster: int = 12,
+        max_nodes: int = 120,
+    ) -> GraphView:
+        """A renderable subgraph of the top clusters, for the network overview.
+
+        "Show me criminal networks" (no named subject) used to return a plain
+        table of cluster sizes. This assembles the actual members and the
+        scope-allowed links among them so the console can *draw* the clusters —
+        the visualization the brief asks for. Each cluster is capped so a very
+        large component does not swamp the picture; the cap is stated in the
+        answer, not hidden.
+        """
+        graph = self.graph
+        member_nodes: list[str] = []
+        for community in communities:
+            member_nodes.extend(community["members"][:max_members_per_cluster])
+            if len(member_nodes) >= max_nodes:
+                break
+        member_set = set(member_nodes[:max_nodes])
+        if not member_set:
+            return GraphView()
+
+        links: list[GraphLink] = []
+        seen_edges: set[tuple[str, str, str]] = set()
+        for node in member_set:
+            if node not in graph:
+                continue
+            for _source, neighbour, data in graph.edges(node, data=True):
+                if neighbour not in member_set:
+                    continue
+                if not self._edge_allowed(data, scope):
+                    continue
+                key = (min(node, neighbour), max(node, neighbour), data["edge_type"])
+                if key in seen_edges:
+                    continue
+                seen_edges.add(key)
+                links.append(GraphLink(
+                    source=node, target=neighbour,
+                    edge_type=EdgeType(data["edge_type"])
+                    if data["edge_type"] in EdgeType.__members__.values() else EdgeType.CO_ACCUSED,
+                    weight=data["weight"],
+                    case_master_ids=data["case_ids"],
+                    provenance=Provenance(data.get("provenance", "inferred")),
+                ))
+
+        node_community: dict[str, int] = {}
+        for community in communities:
+            for member in community["members"][:max_members_per_cluster]:
+                node_community[member] = community["community_id"]
+
+        nodes = [
+            GraphNode(
+                node_id=node_id,
+                node_type=_node_type(graph.nodes[node_id].get("node_type", "Entity"))
+                if node_id in graph else _node_type("Entity"),
+                label=self.label_for(node_id),
+                attributes={"community": node_community.get(node_id, 0)},
+            )
+            for node_id in member_set
+        ]
+        subgraph = graph.subgraph(member_set)
+        return GraphView(
+            nodes=nodes,
+            links=links,
+            communities=node_community,
+            centrality={node: round(value, 4) for node, value in _degree_centrality(subgraph).items()},
+        )
+
     def organised_activity(
         self,
         scope: UnitScope,

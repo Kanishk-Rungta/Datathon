@@ -63,6 +63,32 @@ class TestAuthentication:
         assert payload["username"] == "analyst.state"
         assert payload["role"] == "analyst"
 
+    def test_demo_accounts_are_listed_in_synthetic_environments(self):
+        """A reviewer opening a Development deployment must be able to sign in.
+
+        The account list was hidden everywhere but ``local``, so the deployed
+        login screen showed no credentials and a reviewer had no way in. It is
+        now shown wherever the data is synthetic (``local`` and
+        ``development``) and withheld where it may be real.
+        """
+        from ksp_cip.config.settings import Environment
+        from ksp_cip.interface.api.routers.session import demo_accounts
+
+        class _Container:
+            def __init__(self, env):
+                from ksp_cip.config.settings import Settings
+                self.settings = Settings(environment=env)
+
+        for env in (Environment.LOCAL, Environment.DEVELOPMENT):
+            body = demo_accounts(_Container(env))
+            assert body["accounts"], f"{env} must list demo accounts"
+            assert body["password"], f"{env} must expose the shared demo password"
+
+        for env in (Environment.STAGING, Environment.PRODUCTION):
+            body = demo_accounts(_Container(env))
+            assert body["accounts"] == [], f"{env} must not list demo accounts"
+            assert "password" not in body, f"{env} must not expose a password"
+
 
 class TestErrorShape:
     def test_unknown_routes_return_a_problem_document(self, client, tokens):
@@ -336,6 +362,29 @@ class TestPayloadsReachTheirRenderers:
             for cell in data["predicted_cells"]:
                 assert {"cell_id", "lat", "lon", "expected_count", "lower_bound",
                         "upper_bound", "hotspot_probability", "risk_level"} <= set(cell)
+
+    def test_the_network_overview_renders_as_a_graph(self, client, tokens):
+        """"Show me criminal networks" (no name) must draw the clusters, not a
+        table — the visualization the brief asks for."""
+        payload = client.post("/api/v1/chat", headers=auth(tokens, "analyst"),
+                              json={"message": "Show me criminal networks",
+                                    "session_id": "pv-net"}).json()
+        assert payload["intent"] == "NETWORK_QUERY"
+        kind = payload["payload"]["payload_type"]
+        # A graph when clusters exist; a table only if scope trimmed everything.
+        assert kind in {"graph", "table"}
+        if kind == "graph":
+            data = payload["payload"]["data"]
+            assert data["nodes"], "the clusters must carry drawable nodes"
+            for node in data["nodes"]:
+                assert {"id", "label", "community"} <= set(node)
+
+    def test_organised_crime_wording_reaches_the_network_graph(self, client, tokens):
+        payload = client.post("/api/v1/chat", headers=auth(tokens, "analyst"),
+                              json={"message": "Show me organised crime groups",
+                                    "session_id": "pv-org"}).json()
+        assert payload["intent"] == "NETWORK_QUERY"
+        assert payload["payload"]["payload_type"] in {"graph", "table"}
 
     def test_a_projection_always_says_it_is_not_a_record(self, client, tokens):
         for message, session in [

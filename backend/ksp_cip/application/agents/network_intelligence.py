@@ -347,6 +347,23 @@ class NetworkIntelligenceAgent(BaseAgent):
             "Clusters are computed from shared FIR records by a modularity algorithm. They indicate where to "
             "look, not who is organised."
         ))
+
+        # Render the clusters as a graph the console can draw — the network
+        # visualization the brief asks for — falling back to a table only if the
+        # subgraph came back empty (e.g. everything trimmed by scope).
+        view = self._graph.communities_view(communities, request.scope)
+        if view.nodes:
+            payload = self._graph_payload("Criminal networks — top clusters", view, seed="")
+        else:
+            payload = StructuredPayload(
+                payload_type="table", title="Person clusters",
+                data={
+                    "columns": ["Cluster", "Members", "Most connected"],
+                    "rows": [[str(c["community_id"]), str(c["size"]), c["most_central_label"]]
+                             for c in communities],
+                },
+            )
+
         return AgentResult(
             agent=self.name, intent=request.intent, summary_claims=claims, evidence=evidence_items,
             traces=[trace(
@@ -355,14 +372,7 @@ class NetworkIntelligenceAgent(BaseAgent):
                 "optimisation with a fixed seed, then ranked members by degree centrality.",
                 inputs={"clusters": len(communities)}, row_count=len(communities),
             )],
-            payload=StructuredPayload(
-                payload_type="table", title="Person clusters",
-                data={
-                    "columns": ["Cluster", "Members", "Most connected"],
-                    "rows": [[str(c["community_id"]), str(c["size"]), c["most_central_label"]]
-                             for c in communities],
-                },
-            ),
+            payload=payload,
             data={"communities": [c["community_id"] for c in communities]},
         )
 
@@ -551,6 +561,99 @@ class NetworkIntelligenceAgent(BaseAgent):
         results = sorted(joins.values(), key=lambda j: len(j["txn_ids"]), reverse=True)
         return results[:5]
 
+    def _financial_overview(self, request: AgentRequest) -> AgentResult:
+        """Suspicious shapes across the whole synthetic transaction extension.
+
+        The entry point when no person or FIR was named. It surfaces the same
+        structural observations the per-subject view uses — concentration
+        (fan-in/out), onward hop chains, per-account bursts — but ranked across
+        everything, so an investigator with no lead yet gets a starting list.
+        Every statement stays an arithmetic observation about recorded amounts,
+        never a finding of wrongdoing (ADR-0005).
+        """
+        transactions = self._financial.all_transactions()
+        if not transactions:
+            return AgentResult(
+                agent=self.name, intent=request.intent,
+                summary_claims=[claim(
+                    "No transactions are recorded in the financial extension. The FIR schema itself "
+                    "holds no financial data.",
+                    provenance=Provenance.SYNTHETIC_EXTENSION,
+                )],
+                warnings=["Financial data is a synthetic extension, not source FIR data."],
+            )
+
+        concentrations = self._analyzer.concentration(transactions)
+        chains = self._analyzer.hop_chains(transactions)
+        bursts = self._analyzer.temporal_bursts(transactions)
+
+        evidence_items = [transaction_evidence(
+            txn_id=str(transactions[0]["txn_id"]),
+            label=f"{len(transactions)} transaction(s) across the synthetic financial extension",
+            case_master_ids=sorted({int(t["case_master_id"]) for t in transactions if t.get("case_master_id")})[:200],
+            detail={"transactions": len(transactions), "is_extension": True},
+        )]
+
+        claims = [claim(
+            f"{len(transactions)} transaction(s) are recorded in the extension. The most notable "
+            "structural patterns across all of them are below — arithmetic observations, not "
+            "findings of wrongdoing.",
+            evidence_items, provenance=Provenance.SYNTHETIC_EXTENSION,
+        )]
+        for spot in concentrations[:3]:
+            direction = "collected from" if spot.direction == "fan-in" else "paid out to"
+            claims.append(claim(
+                f"{spot.label} ({spot.kind}) {direction} {spot.counterparty_count} distinct "
+                f"counterparties totalling ₹{spot.total_amount:,.0f} — above the "
+                f"{spot.percentile:.0f}th percentile for this dataset. A position in the recorded "
+                "transfers, not a statement about any person.",
+                evidence_items, provenance=Provenance.SYNTHETIC_EXTENSION,
+            ))
+        for chain in chains[:2]:
+            claims.append(claim(
+                f"Money moved onward through {chain.hops} transfer(s) between {chain.start_date} and "
+                f"{chain.end_date}: {' → '.join(chain.path)}. Onward movement is a shape in the "
+                "records, not evidence of intent to obscure.",
+                evidence_items, provenance=Provenance.SYNTHETIC_EXTENSION,
+            ))
+        for b in bursts[:2]:
+            claims.append(claim(
+                f"{b.label} recorded {b.txn_count} transfer(s) on {b.day}, against a "
+                f"{b.baseline_days}-day average of {b.baseline_mean:.2f}/day (z = {b.z_score:.1f}). "
+                "A prompt to look, not a conclusion.",
+                evidence_items, provenance=Provenance.SYNTHETIC_EXTENSION,
+            ))
+        claims.append(claim(
+            "Ask about a named accused or an FIR to trace one subject's money trail in full. These "
+            "figures come from a clearly marked synthetic extension, not real banking data."
+        ))
+
+        return AgentResult(
+            agent=self.name, intent=request.intent, summary_claims=claims, evidence=evidence_items,
+            traces=[trace(
+                "financial_overview",
+                "Ranked concentration, onward hop chains and per-account bursts across every "
+                "ext_financial_transaction row. Synthetic extension, not source FIR data.",
+                inputs={"transactions": len(transactions),
+                        "concentrations": len(concentrations), "chains": len(chains),
+                        "bursts": len(bursts)},
+                row_count=len(transactions),
+            )],
+            payload=StructuredPayload(
+                payload_type="table",
+                title="Suspicious transfer patterns — all accounts (synthetic extension)",
+                data={
+                    "columns": ["Account", "Direction", "Counterparties", "Total"],
+                    "rows": [
+                        [c.label, c.direction, str(c.counterparty_count), f"{c.total_amount:,.0f}"]
+                        for c in concentrations[:10]
+                    ],
+                    "is_extension": True,
+                },
+            ),
+            warnings=["Financial data is a synthetic extension, not source FIR data."],
+        )
+
     def _financial_links(self, request: AgentRequest) -> AgentResult:
         request.principal.require(Permission.USE_FINANCIAL_TOOLS)
         names = request.slots.person_names or request.pinned_person_names
@@ -583,10 +686,10 @@ class NetworkIntelligenceAgent(BaseAgent):
             subject_ref = str(transactions[0]["from_ref"]) if transactions else ""
             subject_refs = [subject_ref] if subject_ref else []
         else:
-            return self.empty_result(
-                request, "I need a person or an FIR to trace financial links for.",
-                clarification="Whose transactions should I trace — a named accused, or a specific FIR?",
-            )
+            # No subject named — a generic "trace money transfers" should show
+            # the suspicious *shapes* across the whole synthetic extension, not
+            # ask the officer to already know whom to look at.
+            return self._financial_overview(request)
 
         if not transactions:
             return AgentResult(
