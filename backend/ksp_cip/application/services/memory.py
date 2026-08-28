@@ -27,6 +27,15 @@ _CASE_ANAPHORA = re.compile(
 _BARE_ANAPHORA = re.compile(r"\b(them|those|these|it)\b", re.IGNORECASE)
 _PERSON_ANAPHORA = re.compile(r"\b(him|her|them|he|she|this person|that person|the accused)\b", re.IGNORECASE)
 _DISTRICT_ANAPHORA = re.compile(r"\b(there|that district|the same district|same area)\b", re.IGNORECASE)
+#: A follow-up that changes one facet of the previous question while keeping the
+#: rest of its frame: "what about Bengaluru instead", "how about last year",
+#: "and for Mysuru". These carry the previous turn's crime type and analytic
+#: intent so the officer does not have to restate "theft cases … " every time.
+_CONTINUATION = re.compile(
+    r"\b(what about|how about|and (?:what about|for|in|the)|"
+    r"same for|instead|what if|now (?:show|do|for))\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(slots=True)
@@ -38,6 +47,8 @@ class SessionContext:
     pinned_case_master_ids: list[int] = field(default_factory=list)
     pinned_person_names: list[str] = field(default_factory=list)
     pinned_district_ids: list[int] = field(default_factory=list)
+    pinned_crime_sub_head_ids: list[int] = field(default_factory=list)
+    pinned_crime_types: list[str] = field(default_factory=list)
     last_intent: Intent | None = None
 
     @property
@@ -71,6 +82,8 @@ class MemoryService:
             pinned_case_master_ids=[int(v) for v in state.get("pinned_case_master_ids", [])],
             pinned_person_names=[str(v) for v in state.get("pinned_person_names", [])],
             pinned_district_ids=[int(v) for v in state.get("pinned_district_ids", [])],
+            pinned_crime_sub_head_ids=[int(v) for v in state.get("pinned_crime_sub_head_ids", [])],
+            pinned_crime_types=[str(v) for v in state.get("pinned_crime_types", [])],
             last_intent=Intent(state["last_intent"]) if state.get("last_intent") else None,
         )
 
@@ -84,6 +97,8 @@ class MemoryService:
                 "pinned_case_master_ids": context.pinned_case_master_ids[:50],
                 "pinned_person_names": context.pinned_person_names[:20],
                 "pinned_district_ids": context.pinned_district_ids[:20],
+                "pinned_crime_sub_head_ids": context.pinned_crime_sub_head_ids[:20],
+                "pinned_crime_types": context.pinned_crime_types[:20],
                 "last_intent": context.last_intent.value if context.last_intent else None,
             },
             ttl_seconds=self._ttl_seconds,
@@ -105,6 +120,8 @@ class MemoryService:
         pinned_case_master_ids: Sequence[int],
         pinned_person_names: Sequence[str],
         pinned_district_ids: Sequence[int],
+        pinned_crime_sub_head_ids: Sequence[int] = (),
+        pinned_crime_types: Sequence[str] = (),
     ) -> int:
         turn_seq = self._conversations.next_turn_seq(context.session_id)
         self._conversations.append(
@@ -131,21 +148,48 @@ class MemoryService:
         context.pinned_case_master_ids = list(dict.fromkeys(list(pinned_case_master_ids) + context.pinned_case_master_ids))[:50]
         context.pinned_person_names = list(dict.fromkeys(list(pinned_person_names) + context.pinned_person_names))[:20]
         context.pinned_district_ids = list(dict.fromkeys(list(pinned_district_ids) + context.pinned_district_ids))[:20]
+        # The crime frame is *replaced*, not accumulated: the last question's
+        # crime type is the one a follow-up should inherit, and merging old ones
+        # in would silently widen "theft" back to "theft or murder or …".
+        if pinned_crime_sub_head_ids or pinned_crime_types:
+            context.pinned_crime_sub_head_ids = list(pinned_crime_sub_head_ids)[:20]
+            context.pinned_crime_types = list(pinned_crime_types)[:20]
         context.last_intent = intent
         context.language = user_language
         self.save_state(context)
         return turn_seq
 
     # ---------------------------------------------------------- coreference
-    def resolve_coreference(self, text: str, slots: Slots, context: SessionContext) -> tuple[Slots, list[str]]:
+    def resolve_coreference(
+        self, text: str, slots: Slots, context: SessionContext
+    ) -> tuple[Slots, list[str], Intent | None]:
         """Fill empty slots from session pins when the text is anaphoric.
 
-        Returns the (possibly enriched) slots and a list of human-readable
-        notes describing what was resolved — these appear in the trace so the
-        officer can see why the platform answered about a particular case.
+        Returns the (possibly enriched) slots, human-readable notes describing
+        what was resolved (these appear in the trace so the officer can see why
+        the platform answered about a particular case), and an optional intent
+        override for a continuation follow-up ("what about Bengaluru instead"),
+        which should re-run the previous analytic on the changed facet rather
+        than being re-classified from the fragment alone.
         """
         notes: list[str] = []
+        intent_override: Intent | None = None
         resolved = slots.model_copy(deep=True)
+
+        # A continuation modifies one facet of the previous question. Carry the
+        # crime frame the fragment omitted, and re-use the previous intent so
+        # "what about Bengaluru" stays a location breakdown of *theft* rather
+        # than being read as a brand-new, typeless query.
+        if _CONTINUATION.search(text) and context.last_intent is not None:
+            if not resolved.crime_sub_head_ids and context.pinned_crime_sub_head_ids:
+                resolved.crime_sub_head_ids = list(context.pinned_crime_sub_head_ids)
+                resolved.crime_types = list(context.pinned_crime_types)
+                notes.append(
+                    "Carried the crime type from the previous turn "
+                    f"({', '.join(context.pinned_crime_types) or 'as before'})"
+                )
+            intent_override = context.last_intent
+            notes.append(f"Continued the previous {str(context.last_intent).replace('_', ' ').lower()}")
 
         wants_case = bool(_CASE_ANAPHORA.search(text)) or (
             bool(_BARE_ANAPHORA.search(text)) and not resolved.case_master_ids and not resolved.crime_nos
@@ -165,7 +209,7 @@ class MemoryService:
             resolved.district_ids = list(context.pinned_district_ids[:1])
             notes.append("Resolved the location reference to the district discussed in the previous turn")
 
-        return resolved, notes
+        return resolved, notes, intent_override
 
     # --------------------------------------------------------------- export
     def transcript(self, session_id: str) -> list[dict[str, Any]]:

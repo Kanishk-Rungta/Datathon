@@ -49,11 +49,19 @@ def me(principal: PrincipalDep, container: ContainerDep) -> PrincipalResponse:
 
 @router.get("/demo-accounts")
 def demo_accounts(container: ContainerDep) -> dict[str, Any]:
-    """Role list for the local demo. Never exposed outside the local environment."""
+    """Role list for the demo, shown only in synthetic-data environments.
+
+    Listed in ``local`` and ``development`` — both run entirely on synthetic
+    seed data, and a reviewer opening a Development deployment cannot sign in
+    without knowing the accounts. Withheld in ``staging`` and ``production``,
+    where the data may be real and the seeded demo accounts are disabled
+    anyway.
+    """
     from ....config.settings import Environment
 
-    if container.settings.environment is not Environment.LOCAL:
-        return {"accounts": [], "note": "Demo accounts are only listed in the local environment."}
+    DEMO_ENVIRONMENTS = {Environment.LOCAL, Environment.DEVELOPMENT}
+    if container.settings.environment not in DEMO_ENVIRONMENTS:
+        return {"accounts": [], "note": "Demo accounts are not listed in this environment."}
     from ....application.pipeline import DEMO_PASSWORD, DEMO_USERS
 
     return {
@@ -62,5 +70,5 @@ def demo_accounts(container: ContainerDep) -> dict[str, Any]:
             {"username": username, "display_name": display, "role": str(role)}
             for username, display, role, _district in DEMO_USERS
         ],
-        "note": "Local demo credentials only. Seeded accounts are disabled outside the local environment.",
+        "note": "Synthetic demo credentials. These accounts exist only where the data is synthetic.",
     }

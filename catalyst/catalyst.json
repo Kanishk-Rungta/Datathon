@@ -6,7 +6,7 @@
     {
       "name": "cip_refresh",
       "type": "event",
-      "stack": "python3.11",
+      "stack": "python_3_11",
       "source": "functions/cip_refresh",
       "description": "Runs one pipeline stage (ingest, data_quality, intelligence, retention) per Circuit invocation.",
       "memory": 1024,
@@ -23,7 +23,7 @@
     {
       "name": "cip-api",
       "source": "appsail/api",
-      "stack": "python3_11",
+      "stack": "python_3_11",
       "description": "Runs the FastAPI application (ksp_cip.interface.api.main:get_app) under uvicorn. Replaces a prior Advanced I/O function whose handler had no documented ASGI bridge -- see docs/deployment/catalyst-runtime.md."
     }
   ],

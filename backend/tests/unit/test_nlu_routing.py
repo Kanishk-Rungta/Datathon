@@ -34,6 +34,13 @@ class FakeReference:
         lowered = name.casefold()
         if lowered.startswith("mysor") or lowered.startswith("mysur"):
             return {"DistrictID": 2922, "DistrictName": "Mysuru"}
+        if lowered.startswith("bengaluru") or lowered.startswith("bangalore"):
+            return {"DistrictID": 2904, "DistrictName": "Bengaluru City"}
+        return None
+
+    def resolve_unit(self, name):
+        # The real ReferenceRepository resolves station names; the NLU calls it
+        # while disambiguating place phrases. No unit fixtures are needed here.
         return None
 
     def resolve_crime_sub_head(self, name):
@@ -119,6 +126,26 @@ class TestIntentClassification:
         """
         assert engine.classify(text).intent is expected
 
+    @pytest.mark.parametrize("text,expected", [
+        # Plural "networks" (a trailing \b failed on the s), and organised crime.
+        ("Show me criminal networks", Intent.NETWORK_QUERY),
+        ("Show me organised crime groups", Intent.NETWORK_QUERY),
+        ("Detect organized crime rings", Intent.NETWORK_QUERY),
+        # The brief's own socio-economic wording, which used to fall through.
+        ("Correlation of crime with literacy and unemployment across districts",
+         Intent.SOCIOECONOMIC_QUERY),
+        ("How does urbanization and migration correlate with crime",
+         Intent.SOCIOECONOMIC_QUERY),
+        ("Relationship between poverty and offences", Intent.SOCIOECONOMIC_QUERY),
+        # Demographic breakdowns by facet.
+        ("Victim breakdown by age and gender", Intent.DEMOGRAPHIC_INSIGHT),
+        ("Break down complainants by occupation", Intent.DEMOGRAPHIC_INSIGHT),
+    ])
+    def test_brief_wording_reaches_the_right_specialist(self, engine, text, expected):
+        """The exact phrasing a reviewer reads off the brief must route, not
+        fall through to a generic FIR list."""
+        assert engine.classify(text).intent is expected
+
     def test_classification_is_deterministic(self, engine):
         text = "Show me theft trends in Mysuru"
         first = engine.classify(text)
@@ -146,6 +173,18 @@ class TestSlotExtraction:
         """"Theft" is a family; answering with one sub-head would be a narrower question."""
         ids = engine.extract_slots("theft cases in Mysuru").crime_sub_head_ids
         assert set(ids) == {201, 202, 203}
+
+    def test_network_subject_is_extracted_after_a_relational_cue(self, engine):
+        """"the network around X" must yield X as a person, or the graph never renders."""
+        assert "Ramesh Gowda" in engine.extract_slots("Show the network around Ramesh Gowda").person_names
+        assert "Suresh Kumar" in engine.extract_slots("How is Suresh Kumar connected to others").person_names
+
+    def test_a_place_after_about_is_not_read_as_a_person(self, engine):
+        """"What about Mysuru" is a location, not an accused named Mysuru."""
+        slots = engine.extract_slots("What about Mysuru instead")
+        assert 2922 in slots.district_ids
+        assert "Mysuru" not in slots.person_names
+        assert "Mysore" not in slots.person_names
 
     def test_crime_no_is_recognised(self, engine):
         assert engine.extract_slots("open FIR 104430006202600001").crime_nos == ["104430006202600001"]

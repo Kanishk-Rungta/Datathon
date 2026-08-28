@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...domain.enums import AgentName, Intent, Permission, Provenance
+from ...domain.errors import AuthorizationError
 from ...domain.models import AgentResult, StructuredPayload
 from ...infrastructure.db.repositories import (
     AggregateFilter,
@@ -839,7 +840,36 @@ class CrimeAnalyticsAgent(BaseAgent):
     def _sociology(self, request: AgentRequest) -> AgentResult:
         subject = str(request.options.get("subject") or self._infer_subject(request.text_english))
         dimension = str(request.options.get("dimension") or self._infer_dimension(request.text_english))
-        self._authorization.assert_aggregate_only_dimension(request.principal, dimension)
+        # A caste/religion request without the sensitive-demographics permission
+        # is declined *gracefully* — a composed refusal the officer can read, not
+        # a raised exception mid-turn. The distinction matters: the answer still
+        # ships (evidenced, auditable), it just declines this dimension.
+        try:
+            self._authorization.assert_aggregate_only_dimension(request.principal, dimension)
+        except AuthorizationError:
+            refusal = empty_result_evidence(
+                key=f"sociology:sensitive-declined:{dimension}",
+                label=f"{dimension.capitalize()} breakdown requires the sensitive-demographics permission",
+                detail={"dimension": dimension, "role": str(request.principal.role)},
+            )
+            return AgentResult(
+                agent=self.name, intent=request.intent,
+                summary_claims=[claim(
+                    f"A breakdown by {dimension} is a sensitive demographic that your role is not "
+                    "authorised to see. Age, gender and occupation breakdowns are available; caste and "
+                    "religion require the sensitive-demographics permission and are aggregate-only even "
+                    "then.",
+                    [refusal], provenance=Provenance.DETERMINISTIC_COMPUTATION,
+                )],
+                evidence=[refusal],
+                traces=[trace(
+                    "sociology_sensitive_declined",
+                    "The requested demographic dimension is restricted; no breakdown was computed.",
+                    inputs={"dimension": dimension}, row_count=0,
+                )],
+                confidence=0.9,
+                warnings=["Sensitive demographic dimension declined for this role."],
+            )
 
         substitution_note = None
         if subject == "victim" and dimension not in VICTIM_DIMENSIONS:
@@ -991,6 +1021,10 @@ class CrimeAnalyticsAgent(BaseAgent):
         evidence = aggregate_evidence(
             key=f"socioeconomic:correlation:{result.census_year}:{len(result.correlations)}",
             label=f"Socio-economic correlation across {result.district_count} districts ({result.data_source})",
+            # A district-cross-section correlation rests on aggregate counts, not
+            # individual cases, so there are no case ids to cite — but the
+            # argument is required, so pass it explicitly rather than 500ing.
+            case_master_ids=[],
             detail={
                 "district_count": result.district_count,
                 "census_year": result.census_year,

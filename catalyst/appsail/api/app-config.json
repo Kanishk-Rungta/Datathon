@@ -1,7 +1,7 @@
 {
   "name": "cip-api",
-  "stack": "python3_11",
+  "stack": "python_3_11",
   "command": "python3 -u server.py",
   "port": 9000,
-  "comment": "Runs ksp_cip.interface.api.main:get_app via uvicorn. The exact 'stack' identifier must be confirmed against the target project's supported Python runtimes at provisioning time -- see docs/deployment/catalyst-runtime.md."
+  "comment": "Runs ksp_cip.interface.api.main:get_app via uvicorn. Stack naming convention (python_<major>_<minor>) confirmed against the installed Catalyst CLI's own 'functions:add --stack' help text -- see docs/deployment/v3-catalyst-commands.md. Whether 3.11 specifically is available in the target project still needs confirming at provisioning time."
 }

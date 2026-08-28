@@ -9,7 +9,9 @@ import { periodLabel } from '../lib/format.js'
  * cited figures in the answer text.
  */
 
-const MARGIN = { top: 12, right: 14, bottom: 26, left: 40 }
+// Bottom margin leaves room for rotated category labels; without it the labels
+// overflowed the viewBox and were clipped mid-word.
+const MARGIN = { top: 12, right: 16, bottom: 62, left: 44 }
 
 function useScales(values, width, height) {
   return useMemo(() => {
@@ -72,7 +74,7 @@ export function LineChart({ labels = [], values = [], height = 168, width = 520,
   )
 }
 
-export function BarChart({ labels = [], values = [], height = 200, width = 520 }) {
+export function BarChart({ labels = [], values = [], height = 250, width = 520 }) {
   const scales = useScales(values, width, height)
   if (values.length === 0) return <div className="empty">No values to plot.</div>
   const barWidth = scales.bandWidth(values.length)
@@ -101,17 +103,25 @@ export function BarChart({ labels = [], values = [], height = 200, width = 520 }
             <title>{`${labels[index]}: ${value}`}</title>
           </rect>
         ))}
-        {labels.map((label, index) => (
-          <text
-            key={label + index}
-            x={scales.band(index, labels.length) + scales.innerWidth / labels.length / 2}
-            y={scales.innerHeight + 15}
-            textAnchor="end"
-            transform={`rotate(-32 ${scales.band(index, labels.length) + scales.innerWidth / labels.length / 2} ${scales.innerHeight + 15})`}
-          >
-            {String(label).length > 16 ? `${String(label).slice(0, 15)}…` : label}
-          </text>
-        ))}
+        {labels.map((label, index) => {
+          const cx = scales.band(index, labels.length) + scales.innerWidth / labels.length / 2
+          const cy = scales.innerHeight + 14
+          const text = String(label)
+          const shown = text.length > 12 ? `${text.slice(0, 11)}…` : text
+          return (
+            <text
+              key={label + index}
+              className="chart__xlabel"
+              x={cx}
+              y={cy}
+              textAnchor="end"
+              transform={`rotate(-35 ${cx} ${cy})`}
+            >
+              {shown}
+              <title>{`${text}: ${values[index]}`}</title>
+            </text>
+          )
+        })}
       </g>
     </svg>
   )

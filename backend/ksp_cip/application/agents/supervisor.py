@@ -141,8 +141,15 @@ class SupervisorAgent:
             state.language = inbound.language
 
         nlu_result = self._nlu.classify(inbound.english)
-        slots, memory_notes = self._memory.resolve_coreference(inbound.english, nlu_result.slots, state)
+        slots, memory_notes, intent_override = self._memory.resolve_coreference(
+            inbound.english, nlu_result.slots, state
+        )
         nlu_result.slots = slots
+        # A continuation ("what about Bengaluru instead") re-runs the previous
+        # analytic on the changed facet rather than being re-classified from the
+        # fragment, which on its own would misread "Bengaluru" as a new subject.
+        if intent_override is not None:
+            nlu_result.intent = intent_override
         scope = request.principal.scope
 
         agent_request = AgentRequest(
@@ -176,6 +183,8 @@ class SupervisorAgent:
             pinned_case_master_ids=_collect_case_ids(results),
             pinned_person_names=_collect_person_names(results, slots),
             pinned_district_ids=slots.district_ids,
+            pinned_crime_sub_head_ids=slots.crime_sub_head_ids,
+            pinned_crime_types=slots.crime_types,
         )
         self._audit.record(
             action="conversation.turn",
