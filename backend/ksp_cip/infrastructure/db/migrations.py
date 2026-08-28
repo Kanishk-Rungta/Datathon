@@ -50,6 +50,39 @@ MIGRATIONS: list[tuple[int, str, str]] = [
             ON cip_event_calendar (approval_status);
         """,
     ),
+    (
+        4,
+        "ext_socioeconomic_indicator: district-level socio-economic reference layer (synthetic extension)",
+        """
+        CREATE TABLE IF NOT EXISTS ext_socioeconomic_indicator (
+            indicator_id          TEXT PRIMARY KEY,
+            district_id           INTEGER NOT NULL,
+            district_name         TEXT NOT NULL,
+            census_year           INTEGER NOT NULL,
+            population            INTEGER,
+            literacy_rate         REAL,
+            male_literacy         REAL,
+            female_literacy       REAL,
+            urbanization_percent  REAL,
+            sex_ratio             INTEGER,
+            population_density    INTEGER,
+            unemployment_rate     REAL,
+            poverty_headcount     REAL,
+            migration_inflow_rate REAL,
+            sc_st_percent         REAL,
+            per_capita_income_index REAL,
+            data_source           TEXT NOT NULL,
+            data_quality          TEXT NOT NULL DEFAULT 'synthetic',
+            is_extension          INTEGER NOT NULL DEFAULT 1,
+            created_at            TEXT NOT NULL,
+            UNIQUE (district_id, census_year)
+        );
+        CREATE INDEX IF NOT EXISTS ix_ext_socio_district
+            ON ext_socioeconomic_indicator (district_id);
+        CREATE INDEX IF NOT EXISTS ix_ext_socio_year
+            ON ext_socioeconomic_indicator (census_year);
+        """,
+    ),
 ]
 
 

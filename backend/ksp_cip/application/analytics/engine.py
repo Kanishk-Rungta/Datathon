@@ -27,6 +27,23 @@ SEASONALITY_COMPARISON_YEARS = 3
 #: not reported as a finding — it would be indistinguishable from noise.
 SEASONALITY_MIN_PRIOR_YEARS = 2
 SOCIOLOGY_SUPPRESSION_THRESHOLD = 10
+
+#: Months of observed history required before any forecast is published. Below
+#: this a projection would be extrapolation from noise, so the result is marked
+#: ``insufficient_history`` and carries no figure — the same refusal
+#: :data:`SEASONALITY_MIN_PRIOR_YEARS` makes for calendar buckets.
+FORECAST_MIN_HISTORY_MONTHS = 6
+#: Months averaged by the rolling-rate baseline.
+FORECAST_ROLLING_WINDOW = 3
+#: Seasonal-naive needs a full prior year plus enough remaining history to be
+#: backtested against; below this the method is not offered at all.
+FORECAST_SEASONAL_MIN_MONTHS = 18
+#: How many months ahead the forecast will project. Beyond a quarter the
+#: interval widens past the point of being useful for planning.
+FORECAST_DEFAULT_HORIZON = 3
+#: A series averaging fewer than this many cases a month is reported but
+#: flagged unstable: at these counts one incident moves the figure materially.
+FORECAST_SPARSE_MEAN = 3.0
 _MONTH_LABELS = {
     1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June",
     7: "July", 8: "August", 9: "September", 10: "October", 11: "November", 12: "December",
@@ -121,6 +138,60 @@ class SeasonalityResult:
     comparison_years: int
     buckets: list[SeasonalBucket]
     total_periods_considered: int
+    trace: ComputationTrace
+
+
+@dataclass(slots=True)
+class ForecastPoint:
+    """One projected month. Always a range, never a bare number."""
+
+    period: str
+    expected: float
+    lower: float
+    upper: float
+
+    def as_text(self) -> str:
+        return f"{self.period}: about {self.expected:.0f} (range {self.lower:.0f}–{self.upper:.0f})"
+
+
+@dataclass(slots=True)
+class BacktestMetric:
+    """How wrong a method was on history it did not get to see."""
+
+    method: str
+    mean_absolute_error: float
+    origins_tested: int
+    beat_constant_baseline: bool
+
+
+@dataclass(slots=True)
+class ForecastResult:
+    """An aggregate planning projection for one place × crime-type series.
+
+    There is deliberately no field here that could name or describe a person.
+    This is a statement about a *series of counts*, and the type system is the
+    cheapest place to make that permanent — the same technique
+    :class:`EventComparisonResult` uses to keep causal claims out.
+    """
+
+    points: list[ForecastPoint]
+    method: str
+    method_reason: str
+    horizon_months: int
+    history_months: int
+    observed_mean: float
+    #: Mean of the most recent months — the level the projection is actually
+    #: built from. Reported alongside :attr:`observed_mean` because on a series
+    #: that has shifted, quoting only the long-run average next to a very
+    #: different projection reads as an error rather than as a trend.
+    recent_mean: float
+    backtests: list[BacktestMetric]
+    insufficient_history: bool
+    sparse: bool
+    caveat: str
+    #: The observed cases the projection was computed from. A forecast is still
+    #: a claim, so it cites the records underneath it like any other.
+    case_ids: list[int]
     trace: ComputationTrace
 
 
@@ -531,6 +602,198 @@ class AnalyticsEngine:
             total_periods_considered=len(counts_by_period), trace=trace,
         )
 
+    # ------------------------------------------------------------ forecast
+    def forecast(
+        self,
+        filters: AggregateFilter,
+        scope: UnitScope,
+        *,
+        horizon_months: int = FORECAST_DEFAULT_HORIZON,
+    ) -> ForecastResult:
+        """Project recorded-case counts forward for planning purposes.
+
+        Two reproducible baselines compete, and the one that was *actually*
+        more accurate on this series wins:
+
+        ``seasonal-naive``
+            next month looks like the same month a year ago — right when a
+            series has a genuine annual shape (festivals, monsoon).
+        ``rolling-rate``
+            next month looks like the mean of the last few — right when it does
+            not.
+
+        Selection is by rolling-origin backtest, never by preference: each
+        method forecasts months it was not shown, and mean absolute error
+        decides. A method that cannot beat "assume the overall average forever"
+        is recorded as not having beaten it, so the reader can see that the
+        modelling earned nothing.
+
+        The interval comes from the chosen method's own backtest residuals
+        rather than from an assumed distribution. That keeps it honest: it says
+        "this method has historically been wrong by about this much on this
+        series", which is a claim the data supports.
+
+        **This forecasts a series of counts, never a person.** No argument here
+        accepts an individual, and :class:`ForecastResult` has no field that
+        could carry one.
+        """
+        horizon = max(1, min(int(horizon_months), 12))
+        rows = self._analytics.monthly_counts(filters, scope)
+        counts_by_period = {str(r["period"]): int(r["case_count"]) for r in rows if r["period"]}
+        series = _dense_monthly_series(counts_by_period)
+        history_months = len(series)
+        values = [float(count) for _, count in series]
+        observed_mean = stats.mean(values) if values else 0.0
+
+        if history_months < FORECAST_MIN_HISTORY_MONTHS:
+            return ForecastResult(
+                points=[], method="none",
+                method_reason=(
+                    f"Only {history_months} month(s) of recorded history match this filter. "
+                    f"At least {FORECAST_MIN_HISTORY_MONTHS} are needed before a projection means anything."
+                ),
+                horizon_months=horizon, history_months=history_months,
+                observed_mean=round(observed_mean, 3), recent_mean=round(observed_mean, 3),
+                backtests=[], insufficient_history=True, sparse=False, case_ids=[],
+                caveat=(
+                    "No projection is offered. Recorded history is too short to distinguish a pattern "
+                    "from noise, and a figure produced from it would look authoritative while meaning "
+                    "nothing."
+                ),
+                trace=ComputationTrace(
+                    operation="forecast",
+                    description=(
+                        "Counted registered cases per calendar month within the caller's authorized "
+                        "scope and found too little history to project from."
+                    ),
+                    inputs={**_filter_inputs(filters), "history_months": history_months,
+                            "minimum_required": FORECAST_MIN_HISTORY_MONTHS},
+                    row_count=history_months,
+                ),
+            )
+
+        candidates = ["rolling-rate"]
+        if history_months >= FORECAST_SEASONAL_MIN_MONTHS:
+            candidates.append("seasonal-naive")
+
+        backtests = [self._backtest(values, method) for method in candidates]
+        # Ties go to the simpler method: a seasonal model that is merely equal
+        # to a moving average has not earned its extra assumption.
+        best = min(backtests, key=lambda m: (m.mean_absolute_error, m.method != "rolling-rate"))
+
+        residual_spread = best.mean_absolute_error
+        points: list[ForecastPoint] = []
+        working = list(values)
+        last_period = series[-1][0]
+        for step in range(1, horizon + 1):
+            expected = _project(working, best.method)
+            # The interval widens with distance because each step forecasts
+            # partly from previous forecasts, not from observation.
+            spread = residual_spread * (1.0 + 0.5 * (step - 1))
+            points.append(ForecastPoint(
+                period=_add_months(last_period, step),
+                expected=round(max(expected, 0.0), 2),
+                lower=round(max(expected - spread, 0.0), 2),
+                upper=round(expected + spread, 2),
+            ))
+            working.append(expected)
+
+        recent_mean = stats.mean(values[-FORECAST_ROLLING_WINDOW:])
+        # Stability is a property of the level being projected, not of the
+        # long-run average. A series that averaged 0.8 over three years but now
+        # runs at 7 a month is not one where a single case moves the answer.
+        sparse = recent_mean < FORECAST_SPARSE_MEAN
+        caveat = (
+            "This is a projection of recorded-case counts for planning, not a prediction of specific "
+            "crimes and not a statement about any individual. It assumes recording practice and "
+            "reporting rates continue unchanged, and it cannot anticipate an event it has never seen."
+        )
+        if sparse:
+            caveat += (
+                f" This series is running at about {recent_mean:.1f} case(s) a month, so a single "
+                "incident moves the figure materially — treat the range, not the midpoint, as the answer."
+            )
+        if not best.beat_constant_baseline:
+            caveat += (
+                " On this series the method did not beat simply assuming the long-run average, so the "
+                "projection carries no more information than that average."
+            )
+
+        case_rows = self._analytics.case_ids_for(filters, scope, limit=200)
+        return ForecastResult(
+            points=points, method=best.method,
+            case_ids=[int(r["case_master_id"]) for r in case_rows],
+            method_reason=(
+                f"Chosen by rolling-origin backtest over {best.origins_tested} origin(s): "
+                f"mean absolute error {best.mean_absolute_error:.2f} case(s) per month, against "
+                + ", ".join(f"{m.method} {m.mean_absolute_error:.2f}" for m in backtests if m is not best)
+                if len(backtests) > 1 else
+                f"Only reproducible method available at {history_months} months of history; "
+                f"backtested mean absolute error {best.mean_absolute_error:.2f} case(s) per month."
+            ),
+            horizon_months=horizon, history_months=history_months,
+            observed_mean=round(observed_mean, 3), recent_mean=round(recent_mean, 3),
+            backtests=backtests, insufficient_history=False, sparse=sparse, caveat=caveat,
+            trace=ComputationTrace(
+                operation="forecast",
+                description=(
+                    "Counted registered cases per calendar month within the caller's authorized scope, "
+                    "densified the series with zero months, backtested each candidate baseline against "
+                    "history it was not shown, and projected forward with the more accurate one. "
+                    "Intervals are that method's own backtest error, not an assumed distribution."
+                ),
+                inputs={
+                    **_filter_inputs(filters),
+                    "history_months": history_months,
+                    "horizon_months": horizon,
+                    "methods_considered": candidates,
+                    "method_selected": best.method,
+                    "rolling_window_months": FORECAST_ROLLING_WINDOW,
+                    "sparse_series_threshold": FORECAST_SPARSE_MEAN,
+                },
+                row_count=history_months,
+                formula=(
+                    "rolling-rate: mean(last 3 observed months); "
+                    "seasonal-naive: value from the same month one year earlier; "
+                    "interval: expected ± MAE × (1 + 0.5 × (step − 1))"
+                ),
+                components=[
+                    {"method": m.method, "mean_absolute_error": m.mean_absolute_error,
+                     "origins_tested": m.origins_tested,
+                     "beat_constant_baseline": m.beat_constant_baseline,
+                     "selected": m is best}
+                    for m in backtests
+                ],
+            ),
+        )
+
+    def _backtest(self, values: Sequence[float], method: str) -> BacktestMetric:
+        """Rolling-origin evaluation: forecast each month from only its past.
+
+        No look-ahead. The origin walks forward and the method never sees the
+        month it is being scored on, which is the only way an error figure here
+        means what it claims to.
+        """
+        warmup = 12 if method == "seasonal-naive" else FORECAST_ROLLING_WINDOW
+        errors: list[float] = []
+        constant_errors: list[float] = []
+        for index in range(warmup, len(values)):
+            history = list(values[:index])
+            predicted = _project(history, method)
+            actual = values[index]
+            errors.append(abs(predicted - actual))
+            constant_errors.append(abs(stats.mean(history) - actual))
+        if not errors:
+            return BacktestMetric(method=method, mean_absolute_error=float("inf"),
+                                  origins_tested=0, beat_constant_baseline=False)
+        mae = stats.mean(errors)
+        return BacktestMetric(
+            method=method,
+            mean_absolute_error=round(mae, 3),
+            origins_tested=len(errors),
+            beat_constant_baseline=mae <= stats.mean(constant_errors),
+        )
+
     # ---------------------------------------------------- event comparison
     def event_comparison(
         self,
@@ -826,3 +1089,46 @@ def _parse_period_end(period: str | None) -> date | None:
 
 def _round_optional(value: float | None) -> float | None:
     return round(value, 2) if value is not None else None
+
+
+def _dense_monthly_series(counts_by_period: dict[str, int]) -> list[tuple[str, int]]:
+    """Fill the gaps between the first and last observed month with zeros.
+
+    A month with no recorded case is an observation, not a missing value.
+    Dropping it would make a sporadic series look steady and would let a
+    rolling mean average over gaps it never saw — the same reason the burst
+    analysis walks calendar days rather than active ones.
+    """
+    periods = sorted(p for p in counts_by_period if _parse_period_start(p))
+    if not periods:
+        return []
+    start, end = _parse_period_start(periods[0]), _parse_period_start(periods[-1])
+    if start is None or end is None:
+        return []
+    series: list[tuple[str, int]] = []
+    year, month = start.year, start.month
+    while (year, month) <= (end.year, end.month):
+        key = f"{year:04d}-{month:02d}"
+        series.append((key, int(counts_by_period.get(key, 0))))
+        month += 1
+        if month > 12:
+            year, month = year + 1, 1
+    return series
+
+
+def _project(history: Sequence[float], method: str) -> float:
+    """One step ahead from the given history, by the named baseline."""
+    if not history:
+        return 0.0
+    if method == "seasonal-naive" and len(history) >= 12:
+        return float(history[-12])
+    window = list(history[-FORECAST_ROLLING_WINDOW:])
+    return stats.mean(window)
+
+
+def _add_months(period: str, steps: int) -> str:
+    start = _parse_period_start(period)
+    if start is None:
+        return period
+    total = (start.year * 12 + (start.month - 1)) + steps
+    return f"{total // 12:04d}-{total % 12 + 1:02d}"

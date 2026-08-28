@@ -12,9 +12,12 @@ from ....domain.models import Principal
 from ..deps import ContainerDep, PrincipalDep, require, scope_note
 from ..schemas import (
     EventComparisonRequest,
+    ForecastRequest,
     HotspotRequest,
     SeasonalityRequest,
+    SocioEconomicRequest,
     SociologyRequest,
+    SpatioTemporalForecastRequest,
     TrendRequest,
 )
 
@@ -160,6 +163,162 @@ def sociology(
             "propensity, policing intensity and base rates all affect them. Association is not "
             "causation and must not be read as a statement about any community. Groups under the "
             "suppression threshold are merged, not shown individually."
+        ),
+    }
+
+
+@router.post("/socioeconomic-correlation")
+def socioeconomic_correlation(
+    payload: SocioEconomicRequest,
+    container: ContainerDep,
+    principal: Principal = Depends(require(Permission.READ_AGGREGATES)),
+) -> dict[str, Any]:
+    """Compute Pearson r between district crime rates and socio-economic indicators.
+
+    Reads from ext_socioeconomic_indicator (synthetic extension).
+    """
+    result = container.socioeconomic_correlator.correlate(
+        principal.scope,
+        census_year=payload.census_year,
+        crime_sub_head_ids=payload.crime_sub_head_ids or None,
+        date_from=payload.date_from,
+        date_to=payload.date_to,
+    )
+    return {
+        "census_year": result.census_year,
+        "data_source": result.data_source,
+        "data_quality": result.data_quality,
+        "district_count": result.district_count,
+        "correlations": [
+            {
+                "indicator": c.indicator,
+                "label": c.label,
+                "pearson_r": c.pearson_r,
+                "district_count": c.district_count,
+                "interpretation": c.interpretation,
+            }
+            for c in result.correlations
+        ],
+        "district_profiles": [
+            {
+                "district_id": p.district_id,
+                "district_name": p.district_name,
+                "case_count": p.case_count,
+                "population": p.population,
+                "crime_rate_per_100k": p.crime_rate_per_100k,
+                "indicators": p.indicators,
+            }
+            for p in result.district_profiles
+        ],
+        "trace": _trace(result.trace),
+        "scope_note": scope_note(principal),
+        "caveat": (
+            "This computes Pearson r between district-level crime rates per 100,000 population and "
+            "socio-economic indicators. This measures cross-district statistical association, NOT "
+            "individual causality. Reporting rates, policing intensity, and urbanization base rates "
+            "all affect crime-rate figures."
+        ),
+    }
+
+
+@router.post("/forecast")
+def forecast(
+    payload: ForecastRequest,
+    container: ContainerDep,
+    principal: Principal = Depends(require(Permission.READ_AGGREGATES)),
+) -> dict[str, Any]:
+    """Aggregate planning projection for an area × crime type.
+
+    Guarded by `READ_AGGREGATES` like every other aggregate endpoint, and
+    aggregate by construction: the request schema has no field for a person.
+    """
+    filters = AggregateFilter(
+        district_ids=payload.district_ids or None,
+        unit_ids=payload.unit_ids or None,
+        crime_sub_head_ids=payload.crime_sub_head_ids or None,
+        date_from=payload.date_from,
+        date_to=payload.date_to,
+    )
+    result = container.engine.forecast(
+        filters, principal.scope, horizon_months=payload.horizon_months
+    )
+    return {
+        "method": result.method,
+        "method_reason": result.method_reason,
+        "horizon_months": result.horizon_months,
+        "history_months": result.history_months,
+        "observed_mean": result.observed_mean,
+        "insufficient_history": result.insufficient_history,
+        "sparse": result.sparse,
+        "points": [
+            {"period": p.period, "expected": p.expected, "lower": p.lower, "upper": p.upper}
+            for p in result.points
+        ],
+        "backtests": [
+            {"method": m.method, "mean_absolute_error": m.mean_absolute_error,
+             "origins_tested": m.origins_tested,
+             "beat_constant_baseline": m.beat_constant_baseline}
+            for m in result.backtests
+        ],
+        "trace": _trace(result.trace),
+        "scope_note": scope_note(principal),
+        "is_forecast": True,
+        "caveat": result.caveat,
+    }
+
+
+@router.post("/spatiotemporal-forecast")
+def spatiotemporal_forecast(
+    payload: SpatioTemporalForecastRequest,
+    container: ContainerDep,
+    principal: Principal = Depends(require(Permission.READ_AGGREGATES)),
+) -> dict[str, Any]:
+    """Spatial Poisson & Exponential Smoothing predictive spatio-temporal forecast.
+
+    Projects future spatial hotspot probabilities and expected incident counts across
+    grid cells over a 7-90 day horizon.
+    """
+    filters = AggregateFilter(
+        district_ids=payload.district_ids or None,
+        unit_ids=payload.unit_ids or None,
+        crime_sub_head_ids=payload.crime_sub_head_ids or None,
+    )
+    result = container.spatiotemporal_forecaster.predict(
+        filters,
+        principal.scope,
+        horizon_days=payload.horizon_days,
+        historical_days=payload.historical_days,
+    )
+    return {
+        "horizon_days": result.horizon_days,
+        "grid_metres": result.grid_metres,
+        "window_start": result.window_start,
+        "window_end": result.window_end,
+        "total_historical_cases": result.total_historical_cases,
+        "projected_total_cases": result.projected_total_cases,
+        "model_name": result.model_name,
+        "predicted_cells": [
+            {
+                "cell_id": c.cell_id,
+                "lat": c.centroid_lat,
+                "lon": c.centroid_lon,
+                "district_id": c.district_id,
+                "historical_count": c.historical_count,
+                "expected_count": c.expected_count,
+                "lower_bound": c.lower_bound,
+                "upper_bound": c.upper_bound,
+                "hotspot_probability": c.hotspot_probability,
+                "risk_level": c.risk_level,
+                "top_crime_sub_head": c.top_crime_sub_head,
+            }
+            for c in result.predicted_cells
+        ],
+        "trace": _trace(result.trace),
+        "scope_note": scope_note(principal),
+        "caveat": (
+            "This is a spatial Poisson point process projection of incident intensity across grid cells "
+            "for operational resource allocation. It assumes historical spatial patterns and reporting "
+            "rates remain consistent, and does NOT predict individual behavior."
         ),
     }
 

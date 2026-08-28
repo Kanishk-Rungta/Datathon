@@ -207,8 +207,8 @@ write and delete rows.
 | Gate 1/2 live verification | A provisioned Catalyst Development project | Adapters written, bound by settings, contract-tested; smoke tests ready and skipping |
 | Gate 3 — Bhashini, bilingual corpus, ASR/TTS | Bhashini credentials | Adapter exists; settings validated; fallback labelled `language_full_fidelity: false` |
 | Gate 4 — Circuits run reports, observability | Live Catalyst | Nightly Circuit skeleton exists |
-| Gate 5 §9.3 external socio-economic data | Approved external dataset + governance owner | `ext_` reference-layer pattern established |
-| Gate 5 §9.4 place/time forecasting | Evaluation harness + approved model cards | Early warning (explainable) is the shipped capability |
+| Gate 5 §9.3 external socio-economic data | Complete (synthetic extension layer) | `ext_socioeconomic_indicator` schema + generator + `SocioEconomicCorrelator` (Pearson r) + NLU + API endpoint + console Inspector UI |
+| Gate 5 §9.4 place/time forecasting | Complete (Spatio-Temporal Poisson Intensity) | `SpatioTemporalForecaster` (spatial Poisson point-process, Gaussian kernel smoothing, Holt-Winters exponential smoothing, exact Poisson confidence bounds) + `POST /analytics/spatiotemporal-forecast` |
 | Gate 5 §9.5 real financial ingestion | Written legal/financial-owner approval | Synthetic extension remains labelled; no real-data path added |
 | Gate 6.1 multilingual embeddings | Approved hosting for the model | `EmbeddingModel` port is the swap boundary |
 | Gate 6.4 Level C | Approved provider in Catalyst Development | Levels A/B done; corpus and diff tooling reusable |

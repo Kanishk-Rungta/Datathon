@@ -83,7 +83,9 @@ class SeedPipeline:
         masters = generate_masters(rng)
         generator = CaseGenerator(masters, rng, anchor=anchor, months=months)
         cases, manifest = generator.generate(target_cases)
-        transactions = generate_transactions(cases, rng, anchor=anchor)
+        transactions = generate_transactions(
+            cases, rng, anchor=anchor, burst_spec=manifest.financial_burst
+        )
 
         writer = BatchWriter(self._filestore, self._control)
         loader = Loader(self._store, self._control, writer)
@@ -121,6 +123,7 @@ class SeedPipeline:
         refresh = self._refresher.refresh_all(transactions=transactions)
         created_users = self._seed_users(masters)
         seeded_events = self._seed_events(anchor)
+        seeded_socioeconomic = self._seed_socioeconomic(masters.districts)
 
         summary = {
             "seed": self._seed,
@@ -137,6 +140,7 @@ class SeedPipeline:
             "intelligence": refresh.as_dict(),
             "users": created_users,
             "events": seeded_events,
+            "socioeconomic_districts": seeded_socioeconomic,
             "manifest": asdict(manifest),
             "duration_seconds": round((datetime.now(timezone.utc) - started).total_seconds(), 2),
         }
@@ -229,6 +233,21 @@ class SeedPipeline:
         LOGGER.info("event_calendar_seeded", extra={"events": written})
         return written
 
+    def _seed_socioeconomic(self, districts: list[dict[str, Any]]) -> int:
+        """Seed synthetic socio-economic indicators for Karnataka districts."""
+        from ...infrastructure.db.repositories import SocioEconomicRepository
+        from .generators import generate_socioeconomic_indicators
+
+        repo = SocioEconomicRepository(self._store)
+        if repo.count() > 0:
+            return repo.count()
+
+        rows = generate_socioeconomic_indicators(districts)
+        for row in rows:
+            repo.upsert(row)
+        LOGGER.info("socioeconomic_indicators_seeded", extra={"districts": len(rows)})
+        return len(rows)
+
     def _truncate(self) -> None:
         """Delete in strict child-before-parent order so foreign keys hold.
 
@@ -241,11 +260,11 @@ class SeedPipeline:
             "cip_case_priority", "cip_early_warning_alert", "cip_hotspot_cell",
             "cip_repeat_offender_score", "cip_entity_resolution_link", "cip_person_identity",
             "cip_embedding_index", "cip_embedding_stats", "cip_graph_edge",
-            "ext_financial_transaction",
+            "ext_financial_transaction", "ext_socioeconomic_indicator",
             # curated children
             "curated_ChargesheetDetails", "curated_ArrestSurrender",
             "curated_ActSectionAssociation", "curated_Accused", "curated_Victim",
-            "curated_ComplainantDetails", "curated_CaseMaster",
+            "curated_CaseMaster",
             "curated_CrimeHeadActSection", "curated_Section", "curated_Act",
             "curated_CrimeSubHead", "curated_CrimeHead",
             "curated_Court", "curated_Employee", "cip_unit_closure", "curated_Unit",

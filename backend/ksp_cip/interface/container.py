@@ -21,7 +21,7 @@ from ..application.agents import (
     NetworkIntelligenceAgent,
     SupervisorAgent,
 )
-from ..application.analytics import AnalyticsEngine
+from ..application.analytics import AnalyticsEngine, SocioEconomicCorrelator, SpatioTemporalForecaster
 from ..application.graph import EntityResolver, FinancialAnalyzer, GraphBuilder, GraphService
 from ..application.nlu import NLUEngine
 from ..application.pipeline import DataQualitySuite, IntelligenceRefresher, SeedPipeline
@@ -54,6 +54,7 @@ from ..infrastructure.db.repositories import (
     IdentityRepository,
     PriorityRepository,
     ReferenceRepository,
+    SocioEconomicRepository,
     UserRepository,
 )
 from ..infrastructure.db.sqlite_store import SQLiteDataStore
@@ -91,6 +92,7 @@ class Container:
     audit_repository: AuditRepository
     control: ControlRepository
     events: EventCalendarRepository
+    socioeconomic_repository: SocioEconomicRepository
 
     # services
     audit: AuditService
@@ -108,6 +110,8 @@ class Container:
     # application
     llm: Any
     engine: AnalyticsEngine
+    socioeconomic_correlator: SocioEconomicCorrelator
+    spatiotemporal_forecaster: SpatioTemporalForecaster
     graph: GraphService
     retrieval: RetrievalService
     nlu: NLUEngine
@@ -184,6 +188,7 @@ def build_container(settings: Settings | None = None) -> Container:
     audit_repository = AuditRepository(store)
     control = ControlRepository(store)
     events = EventCalendarRepository(store)
+    socioeconomic_repository = SocioEconomicRepository(store)
     kv = _build_kv(settings, store)
     cache = _build_cache(settings)
 
@@ -208,7 +213,9 @@ def build_container(settings: Settings | None = None) -> Container:
         early_warning_sigma=settings.early_warning_sigma,
         early_warning_min_baseline=settings.early_warning_min_baseline,
     )
-    graph = GraphService(graph_repository)
+    socioeconomic_correlator = SocioEconomicCorrelator(analytics, socioeconomic_repository)
+    spatiotemporal_forecaster = SpatioTemporalForecaster(analytics, grid_metres=settings.hotspot_grid_metres)
+    graph = _build_graph(settings, graph_repository)
     embedding_model = HashedNgramEmbeddingModel(
         dimensions=settings.embedding_dimensions, model_name=settings.embedding_model_name
     )
@@ -222,7 +229,12 @@ def build_container(settings: Settings | None = None) -> Container:
         audit, cases, reference, retrieval, authorization,
         default_page_size=settings.default_case_page_size,
     )
-    crime_analytics = CrimeAnalyticsAgent(audit, engine, analytics, reference, hotspots, alerts, authorization)
+    crime_analytics = CrimeAnalyticsAgent(
+        audit, engine, analytics, reference, hotspots, alerts, authorization,
+        correlator=socioeconomic_correlator,
+        spatiotemporal_forecaster=spatiotemporal_forecaster,
+        graph=graph,
+    )
     analyzer = FinancialAnalyzer()
     network_intelligence = NetworkIntelligenceAgent(
         audit, graph, identities, cases, financial, analyzer, authorization
@@ -268,10 +280,13 @@ def build_container(settings: Settings | None = None) -> Container:
         graph_repository=graph_repository, embeddings=embeddings, identities=identities,
         hotspots=hotspots, alerts=alerts, priority=priority, financial=financial,
         users=users, conversations=conversations, audit_repository=audit_repository,
-        control=control, events=events, audit=audit, authorization=authorization,
+        control=control, events=events, socioeconomic_repository=socioeconomic_repository,
+        audit=audit, authorization=authorization,
         identity_service=identity_service, identity_provider=identity_provider,
         cache=cache, memory=memory, language=language,
-        composer=composer, pdf=pdf, llm=llm, engine=engine, graph=graph,
+        composer=composer, pdf=pdf, llm=llm, engine=engine,
+        socioeconomic_correlator=socioeconomic_correlator,
+        spatiotemporal_forecaster=spatiotemporal_forecaster, graph=graph,
         retrieval=retrieval, nlu=nlu, supervisor=supervisor,
         data_retrieval=data_retrieval, crime_analytics=crime_analytics,
         network_intelligence=network_intelligence, investigation_support=investigation_support,
@@ -345,6 +360,22 @@ def _build_identity(settings: Settings, users: UserRepository, authorization: Au
 
         return CatalystIdentityProvider(users, authorization, settings)
     return local
+
+
+def _build_graph(settings: Settings, graph_repository: GraphRepository) -> Any:
+    """Return GraphService (NetworkX) or Neo4jGraphAdapter based on configuration."""
+    from ..config.settings import GraphBackend
+
+    if settings.graph_backend is GraphBackend.NEO4J:
+        from ..infrastructure.graph.neo4j import Neo4jGraphAdapter
+
+        return Neo4jGraphAdapter(
+            graph_repository,
+            uri=settings.neo4j_uri,
+            user=settings.neo4j_user,
+            password=settings.neo4j_password,
+        )
+    return GraphService(graph_repository)
 
 
 @functools.lru_cache(maxsize=1)
