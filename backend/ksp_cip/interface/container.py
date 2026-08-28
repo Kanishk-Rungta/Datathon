@@ -36,6 +36,7 @@ from ..application.services import (
     PDFExportService,
 )
 from ..config import Settings, get_settings
+from ..config.settings import DataStoreBackend
 from ..domain.ports import DataStore, FileStore
 from ..infrastructure.db.kv_store import RelationalKeyValueStore
 from ..infrastructure.db.migrations import apply_migrations
@@ -170,7 +171,16 @@ def build_container(settings: Settings | None = None) -> Container:
 
     clock = SystemClock()
     store = _build_store(settings)
-    apply_migrations(store)
+    if settings.datastore_backend is DataStoreBackend.CATALYST:
+        # Schema provisioning against a live Catalyst project is a reviewed,
+        # manual step (docs/deployment/catalyst-schema.md, P2-01) — never an
+        # automatic executescript() at startup. CatalystDataStore has no
+        # executescript for exactly this reason, so apply_migrations() would
+        # crash here rather than skip; it must not be called for this backend.
+        LOGGER.info("catalyst_schema_provisioning_skipped",
+                    extra={"detail": "see docs/deployment/catalyst-schema.md"})
+    else:
+        apply_migrations(store)
     filestore = _build_filestore(settings)
 
     reference = ReferenceRepository(store)
@@ -296,8 +306,6 @@ def build_container(settings: Settings | None = None) -> Container:
 
 
 def _build_store(settings: Settings) -> DataStore:
-    from ..config.settings import DataStoreBackend
-
     if settings.datastore_backend is DataStoreBackend.CATALYST:
         from ..infrastructure.catalyst.datastore import CatalystDataStore
 

@@ -68,7 +68,7 @@ async def stream_asr(websocket: WebSocket) -> None:
         await websocket.close(code=CLOSE_POLICY_VIOLATION)
         return
     try:
-        principal = container.identity_service.principal_from_token(token)
+        principal = container.identity_provider.principal_from_token(token)
         target = Language(language)
     except (CIPError, ValueError) as exc:
         await websocket.send_json({"error": getattr(exc, "detail", "Authentication failed.")})

@@ -11,6 +11,7 @@ Three cross-cutting behaviours are installed here and nowhere else:
 
 from __future__ import annotations
 
+import mimetypes
 from pathlib import Path
 from typing import Any
 
@@ -193,7 +194,18 @@ def _mount_frontend(app: FastAPI) -> None:
 
     Mounted last and at the root so every API path takes precedence. Absence of
     a build is not an error — the backend is fully usable on its own.
+
+    ``mimetypes.guess_type`` falls back to the OS registry, and some Windows
+    installs map ``.js``/``.mjs`` to ``text/plain`` (an unrelated app can
+    overwrite the ``HKEY_CLASSES_ROOT\\.js`` entry). Browsers enforce strict
+    MIME checking on ES module scripts, so a wrong content type is a blank,
+    silently-broken console rather than a visible error. Registering the
+    correct types before mounting keeps the console working regardless of
+    the host's registry.
     """
+    mimetypes.add_type("application/javascript", ".js")
+    mimetypes.add_type("application/javascript", ".mjs")
+    mimetypes.add_type("text/css", ".css")
     dist = Path(__file__).resolve().parents[4] / "frontend" / "dist"
     if dist.is_dir():
         app.mount("/", StaticFiles(directory=str(dist), html=True), name="console")

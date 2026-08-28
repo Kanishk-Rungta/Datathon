@@ -264,7 +264,7 @@ class CaseRepository:
         fragment, params = in_clause("cid", list(case_ids))
         return self._store.query(
             "SELECT asa.CaseMasterID, asa.ActID, asa.SectionID, asa.ActOrderID, asa.SectionOrderID,"
-            " a.ShortName AS act_short_name, s.SectionDescription"
+            " a.ShortName, s.SectionDescription"
             " FROM curated_ActSectionAssociation asa"
             " LEFT JOIN curated_Act a ON a.ActCode = asa.ActID"
             " LEFT JOIN curated_Section s ON s.ActCode = asa.ActID AND s.SectionCode = asa.SectionID"

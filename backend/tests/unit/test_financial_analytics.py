@@ -278,3 +278,61 @@ class TestLanguageIsObservationalNotAccusatory:
         forbidden = {"conclusion", "verdict", "guilt", "culpability", "finding", "suspicion"}
         for item in (*summary.chains, *summary.concentrations, *summary.positions):
             assert not forbidden & set(getattr(item, "__slots__", ()))
+
+
+class TestExtensionMarkerIsDerivedFromData:
+    """The "(synthetic extension)" marker must come from the rows.
+
+    ``ext_financial_transaction`` declares an ``is_extension`` column and the
+    read path selects it, but the summary used to hard-code ``True``. That was
+    honest for today's synthetic data and wrong as a design: an approved real
+    ingestion would still have been labelled synthetic, and the column the
+    schema defines was never read.
+    """
+
+    def test_synthetic_rows_are_marked(self, analyzer):
+        rows = [txn("t1", "A", "B", 1000, "2026-01-01")]
+        summary = analyzer.summarize(
+            subject_ref="A", subject_label="A Ltd", transactions=rows,
+        )
+        assert summary.is_extension is True
+
+    def test_rows_flagged_as_real_drop_the_marker(self, analyzer):
+        rows = [txn("t1", "A", "B", 1000, "2026-01-01")]
+        for row in rows:
+            row["is_extension"] = 0
+        summary = analyzer.summarize(
+            subject_ref="A", subject_label="A Ltd", transactions=rows,
+        )
+        assert summary.is_extension is False
+
+    def test_one_synthetic_row_marks_the_whole_aggregate(self, analyzer):
+        real = txn("t1", "A", "B", 1000, "2026-01-01")
+        real["is_extension"] = 0
+        synthetic = txn("t2", "A", "C", 2000, "2026-01-02")
+        summary = analyzer.summarize(
+            subject_ref="A", subject_label="A Ltd", transactions=[real, synthetic],
+        )
+        assert summary.is_extension is True, (
+            "Mixing a synthetic row into real data does not produce a real total."
+        )
+
+    def test_a_row_with_no_flag_is_treated_as_an_extension(self, analyzer):
+        row = txn("t1", "A", "B", 1000, "2026-01-01")
+        row.pop("is_extension")
+        summary = analyzer.summarize(
+            subject_ref="A", subject_label="A Ltd", transactions=[row],
+        )
+        assert summary.is_extension is True, (
+            "An unlabelled row is not evidence of provenance; fail toward labelling."
+        )
+
+    def test_the_network_side_also_counts(self, analyzer):
+        own = txn("t1", "A", "B", 1000, "2026-01-01")
+        own["is_extension"] = 0
+        neighbour = txn("t2", "B", "C", 500, "2026-01-02")
+        summary = analyzer.summarize(
+            subject_ref="A", subject_label="A Ltd",
+            transactions=[own], network_transactions=[own, neighbour],
+        )
+        assert summary.is_extension is True

@@ -63,14 +63,14 @@ def export_pdf(
     container.audit.record(
         action="export.pdf", principal=principal, object_type="export",
         object_ids=[result["key"]], outcome="success",
-        detail={"bytes": result.get("bytes"), "session_id": payload.session_id,
+        detail={"bytes": result.get("size_bytes"), "session_id": payload.session_id,
                 "case_master_id": payload.case_master_id},
     )
     return ExportResponse(
         url=container.filestore.url_for(result["key"]),
         key=result["key"],
         filename=filename,
-        bytes=int(result.get("bytes", 0)),
+        bytes=int(result.get("size_bytes", 0)),
         kannada_glyphs_embedded=container.pdf.supports_kannada_glyphs,
         notice=NOTICE,
     )
@@ -99,7 +99,7 @@ def _briefing_sections(container: Any, principal: Any, summary: Any) -> list[tup
     ]
     if act_sections:
         sections.append(("Charges", [
-            f"{row.get('ShortName') or row.get('ActCode')} section {row.get('SectionCode')}"
+            f"{row.get('ShortName') or row.get('ActID')} section {row.get('SectionID')}"
             for row in act_sections
         ]))
     if summary.brief_facts:
