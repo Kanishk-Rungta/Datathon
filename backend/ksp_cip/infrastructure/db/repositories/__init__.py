@@ -11,12 +11,14 @@ from .intel import (
 )
 from .platform import AuditRepository, ControlRepository, ConversationRepository, UserRepository
 from .reference import ReferenceRepository
+from .socioeconomic import SocioEconomicRepository
 
 __all__ = [
     "AggregateFilter", "AlertRepository", "AnalyticsRepository", "AuditRepository",
     "CaseFilter", "CaseRepository", "ControlRepository", "ConversationRepository",
     "EmbeddingRepository", "EventCalendarRepository", "FinancialRepository",
     "GraphRepository", "HotspotRepository",
-    "IdentityRepository", "PriorityRepository", "ReferenceRepository", "UserRepository",
+    "IdentityRepository", "PriorityRepository", "ReferenceRepository",
+    "SocioEconomicRepository", "UserRepository",
     "in_clause", "rows_to_case_summaries",
 ]

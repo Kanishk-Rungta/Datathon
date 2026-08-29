@@ -29,7 +29,7 @@ def get_principal(
     if not authorization or not authorization.lower().startswith("bearer "):
         raise AuthenticationError("A bearer token is required for this endpoint")
     token = authorization.split(" ", 1)[1].strip()
-    return container.identity_service.principal_from_token(token)
+    return container.identity_provider.principal_from_token(token)
 
 
 PrincipalDep = Annotated[Principal, Depends(get_principal)]

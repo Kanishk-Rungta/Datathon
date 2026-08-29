@@ -242,6 +242,24 @@ class AnalyticsRepository:
         return _rollup(rows, "incident_at", 11, 13, "hour_of_day")
 
     # ------------------------------------------------------------------- geo
+    def case_time_and_place(self, filters: AggregateFilter, scope: UnitScope,
+                            limit: int = 20000) -> list[dict[str, Any]]:
+        """Registration date and district per case, scope-filtered.
+
+        Distinct from :meth:`geo_points`, which requires latitude/longitude and
+        so silently drops any case without coordinates. Organised-activity
+        reach is measured in districts and days, both of which a case has even
+        when it was never geocoded.
+        """
+        where, params = self._predicate(filters, scope)
+        params["limit"] = limit
+        return self._store.query(
+            "SELECT c.CaseMasterID AS case_master_id,"
+            " c.CrimeRegisteredDate AS registered_date, u.DistrictID AS district_id"
+            + self._FROM + where + " ORDER BY c.CrimeRegisteredDate DESC LIMIT :limit",
+            params,
+        )
+
     def geo_points(self, filters: AggregateFilter, scope: UnitScope, limit: int = 20000) -> list[dict[str, Any]]:
         where, params = self._predicate(filters, scope)
         params["limit"] = limit

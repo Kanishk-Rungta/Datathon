@@ -506,6 +506,27 @@ class FinancialRepository:
             params,
         )
 
+    def neighbourhood(self, refs: Sequence[str], *, limit: int = 2000) -> list[dict[str, Any]]:
+        """The subject's transfers plus their counterparties' other transfers.
+
+        A hop chain, a fan-in hub or a broker position is a property of a
+        neighbourhood; none of them are visible in one account's rows. This is
+        one hop only, and capped, because the next hop out reaches most of the
+        graph and stops describing the subject at all.
+        """
+        direct = self.for_refs(refs)
+        if not direct:
+            return []
+        counterparties = {str(t["from_ref"]) for t in direct} | {str(t["to_ref"]) for t in direct}
+        counterparties.update(str(r) for r in refs)
+        fragment, params = in_clause("r", sorted(counterparties))
+        params["lim"] = limit
+        return self._store.query(
+            f"SELECT * FROM ext_financial_transaction WHERE from_ref IN ({fragment})"
+            f" OR to_ref IN ({fragment}) ORDER BY txn_date LIMIT :lim",
+            params,
+        )
+
     def all_transactions(self) -> list[dict[str, Any]]:
         return self._store.query("SELECT * FROM ext_financial_transaction ORDER BY txn_date")
 

@@ -46,6 +46,7 @@ TARGETS = {
         # Imported by name before any application code runs. Missing vendored
         # copies of these are what made the first live deploy crash.
         "vendor_required": ("uvicorn", "fastapi", "pydantic", "pydantic_settings"),
+        "imports": ("ksp_cip", "ksp_cip.interface.container", "ksp_cip.interface.api.main"),
     },
     "refresh": {
         "language": "python",
@@ -56,6 +57,7 @@ TARGETS = {
         # ksp_cip.interface.api, which is why its requirements.txt is shorter
         # than the API's.
         "vendor_required": ("pydantic", "pydantic_settings", "numpy", "networkx"),
+        "imports": ("ksp_cip", "ksp_cip.interface.container"),
     },
     "console": {
         # Node, not Python: no ksp_cip package, no bootstrap, no compileall/
@@ -114,7 +116,9 @@ def build_manifest(staging: Path) -> dict[str, object]:
     }
 
 
-def verify_self_contained(staging: Path, python_executable: str) -> None:
+def verify_self_contained(
+    staging: Path, python_executable: str, imports: tuple[str, ...]
+) -> None:
     """Import ``ksp_cip`` with sys.path containing only the staging dir.
 
     ``-I`` (isolated mode) additionally strips the environment's own
@@ -125,12 +129,11 @@ def verify_self_contained(staging: Path, python_executable: str) -> None:
     # the standard library is still reachable through the base interpreter's
     # own entries -- only the staging directory needs adding, at the front,
     # so nothing else on this specific path could satisfy the import instead.
+    import_statements = " ".join(f"import {name};" for name in imports)
     script = (
         "import sys; "
         f"sys.path.insert(0, {str(staging)!r}); "
-        "import ksp_cip; "
-        "import ksp_cip.interface.container; "
-        "import ksp_cip.interface.api.main; "
+        f"{import_statements} "
         "print('OK: ksp_cip imports with sys.path limited to the staging directory')"
     )
     result = subprocess.run(
@@ -338,7 +341,7 @@ def build(target: str, output: Path, *, python_executable: str, check_only: bool
 
     if is_python:
         verify_compiles(output)
-        verify_self_contained(output, python_executable)
+        verify_self_contained(output, python_executable, spec["imports"])
         verify_vendored(output, spec["vendor_required"])
     else:
         verify_console_bundle(output)

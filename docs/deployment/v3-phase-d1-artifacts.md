@@ -128,3 +128,64 @@ options).
 
 This document, plus `docs/deployment/v3-catalyst-commands.md` (CLI evidence)
 and the two artifact manifests (regenerable, not committed).
+
+---
+
+## Addendum, 29 Aug 2026 — what D1-3 could not have caught
+
+D1-3 above is a genuine result, and it is also the reason a real defect
+survived this phase. Read the command it ran:
+
+```bash
+node catalyst/appsail/console/server.js
+```
+
+That runs the console **out of the checkout**, where
+`path.resolve(__dirname, '../../../frontend/dist')` resolves to a directory
+that exists. Deployed, it does not: Catalyst ships only `appsail/console`, and
+`frontend/dist` is three levels outside it. Every check in D1-3 passed and
+would have kept passing while the deployed console served nothing.
+
+This is exactly the class of defect P1-03 exists to catch — and D1-1 caught it
+for the *Python* artifacts, by importing them with `sys.path` limited to the
+staging directory. The console had no staging directory to test, so the test
+was run against the source tree instead, and a source-tree test cannot
+distinguish "self-contained" from "reaching upward".
+
+Corrected:
+
+- A **third artifact target**, `--target console`, stages `server.js`,
+  `package.json`, `app-config.json` and a copy of `frontend/dist`, and fails
+  the build outright if the console has not been built.
+- `server.js` resolves its document root as `CIP_CONSOLE_DIST` → `./dist`
+  (staged) → `../../../frontend/dist` (checkout), mirroring
+  `_bootstrap.locate_backend_root`, so one file works in both layouts.
+- The rerun of D1-3 was done **against the staged artifact**, not the
+  checkout — `cd dist/cip-console && node server.js` — which is the only
+  version of that test worth anything:
+
+| Check | Result |
+|---|---|
+| `GET /` from the staged directory | 200, the built `index.html` |
+| `GET /index.html` | 200 |
+| `GET /api/v1/health` through the proxy | 200, real health payload |
+| `GET /../server.js` (traversal) | 200 `index.html` — the entrypoint is not served |
+
+Artifact sizes on the rerun (Python targets grew with the package):
+
+| Target | Files | Bytes |
+|---|---|---|
+| `cip-api` | 216 | 2,283,798 |
+| `cip-refresh` | 216 | 2,291,990 |
+| `cip-console` | 6 | 229,445 |
+
+Two further corrections in the same pass:
+
+- The self-containment check imported `ksp_cip.interface.api.main` for **both**
+  targets, including `cip_refresh` — quietly proving a FastAPI dependency that
+  function's own `requirements.txt` deliberately omits. Import lists are now
+  per-target.
+- The static handler's containment test was `candidate.startsWith(DIST)`, which
+  also accepts a sibling directory whose name merely begins with the document
+  root (`.../dist-backup/x` starts with `.../dist`). It now compares against
+  `DIST + path.sep`.

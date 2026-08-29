@@ -1,0 +1,25 @@
+# AI4Bharat speech service — deliberately NOT part of backend/pyproject.toml.
+# These weigh several gigabytes; keeping them here is what stops PyTorch from
+# entering every Catalyst deployment artifact.
+
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+numpy>=1.26
+
+# ASR (IndicConformer) and the shared model runtime.
+torch>=2.2
+transformers>=4.40
+
+# TTS (Indic-Parler-TTS). Published from source, not on PyPI.
+parler-tts @ git+https://github.com/huggingface/parler-tts.git
+
+# Translation (IndicTrans2). Optional: without it /translate returns 503 and
+# the platform falls back to its offline Kannada glossary, which is the
+# designed degradation rather than a failure.
+IndicTransToolkit>=1.0.0
+
+# ffmpeg must also be on PATH for browser audio (WebM/Opus). It is a system
+# package, not a pip one:
+#   macOS:  brew install ffmpeg
+#   Ubuntu: sudo apt-get install ffmpeg

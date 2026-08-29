@@ -14,6 +14,7 @@ a fact, and never widens its own scope.
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import date
@@ -22,6 +23,35 @@ from typing import Any
 from ...domain.enums import AgentName, Intent
 from ...domain.models import AgentResult, Principal, Slots, UnitScope
 from ..services.audit import AuditService
+
+#: Requests to say what a *person* will do next.
+#:
+#: This lives in the shared agent contract, not in one agent, because the same
+#: prohibited question classifies onto several intents — "predict which person
+#: will offend" as FORECAST_QUERY, "which accused will offend next month" as
+#: TREND_QUERY, "who will commit a crime next year" as GENERAL_QA. The
+#: supervisor checks it before routing so the refusal cannot be reached around,
+#: and the forecast agent checks person *slots* separately for the case where a
+#: name was extracted but the phrasing is not future-tense.
+#:
+#: Every branch requires a **forward-looking verb**, never just a person noun.
+#: Without that requirement the pattern blocked "which accused are named in FIR
+#: 104430006202600001?" — a plain recorded-fact question — because "which
+#: accused" alone was enough to trip it. Asking what a person *did* must stay
+#: answerable; only asking what they *will do* is refused.
+INDIVIDUAL_PREDICTION_RE = re.compile(
+    # "which person will …", "which of these accused will …"
+    r"\b(?:which|what|who)\s+(?:of\s+(?:these|those|the)\s+)?"
+    r"(?:person|people|individual|individuals|accused|offender|offenders|suspect|suspects|one)\b"
+    r"[^.?]{0,40}?\b(?:will|would|is going to|are going to|is likely to|are likely to|might|may)\b"
+    # "who will …"
+    r"|\bwho\s+(?:will|would|is likely to|is going to|might)\b"
+    # "will X reoffend", "is likely to commit"
+    r"|\b(?:will|would|is likely to|are likely to)\s+(?:\w+\s+){0,3}(?:commit|reoffend|re-offend|offend)\b"
+    # "probability that X commits", "risk of X reoffending"
+    r"|\b(?:likelihood|probability|chance|risk)\s+(?:that|of)\s+[^.?]{0,40}?(?:commit|reoffend|offend)",
+    flags=re.IGNORECASE,
+)
 
 
 @dataclass(slots=True)

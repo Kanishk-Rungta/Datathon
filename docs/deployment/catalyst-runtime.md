@@ -92,6 +92,42 @@ example showed `Python_3_9`; whether `Python_3_11`/`Python_3_12` is available
 must be confirmed against the target project at provisioning time — see
 `phase1-catalyst-runtime.md`), and the real request path end-to-end.
 
+## Addendum, 29 Aug 2026 — the console had the same defect
+
+The decision above moved the *API* off a path that could not have worked, and
+`scripts/build_catalyst_artifact.py` was written so the API artifact carries
+`ksp_cip` with it rather than reaching back into the checkout (P1-03).
+
+`cip-console` was left behind. Its `server.js` resolved the document root as
+`path.resolve(__dirname, '../../../frontend/dist')` — three levels above
+`appsail/console`, and therefore outside the directory Catalyst zips and
+ships. The service would have deployed cleanly, started, logged nothing
+unusual, and served a 404-then-index fallback with no index to fall back to.
+It is the identical defect, one component over.
+
+Two changes:
+
+- `server.js` now resolves its document root in order: `CIP_CONSOLE_DIST`,
+  `./dist` beside the entrypoint (the staged layout), then the repo-relative
+  `frontend/dist` (the checkout layout) — deliberately mirroring
+  `_bootstrap.locate_backend_root`, so one file works in both places.
+- `build_catalyst_artifact.py` gained a `console` target that copies
+  `frontend/dist` into the staging directory and **fails the build** if the
+  console has not been built. Its self-containment check is the Node
+  equivalent of the Python one: prove nothing the service serves lives outside
+  the directory being shipped.
+
+`catalyst.json` now states `source`, `deploy_source` and `build` for every
+component, and `test_catalyst_deployment_descriptor.py::TestDeployableSources`
+asserts all three are present and that the named build target exists — so the
+next component added cannot quietly repeat this.
+
+The same pass corrected one more thing on this path: `_bootstrap.py` defaulted
+`KSPCIP_DATASTORE_BACKEND` to `catalyst` while leaving the file store on
+`local`, which `Settings.deployment_problems()` rejects outright. Every first
+deploy would have failed at startup on a configuration error the deployer had
+no way to anticipate. The two are now defaulted together.
+
 ## Sources
 
 - [Catalyst by Zoho — Basic I/O Functions](https://catalyst.zoho.com/help/basicio-functions.html)

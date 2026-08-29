@@ -47,7 +47,6 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
         Permission.READ_PERSON_IDENTITY,
         Permission.READ_SENSITIVE_DEMOGRAPHICS,
         Permission.READ_AGGREGATES,
-        Permission.READ_STATEWIDE,
         Permission.USE_GRAPH_TOOLS,
         Permission.USE_OFFENDER_PROFILING,
         Permission.USE_FINANCIAL_TOOLS,
@@ -125,9 +124,9 @@ class AuthorizationService:
         if principal.scope.statewide:
             return ScopeDescription(label="Karnataka (statewide)", unit_count=0, statewide=True)
         unit = self._reference.unit(principal.home_unit_id) if principal.home_unit_id else None
-        label = unit["UnitName"] if unit else "no unit assigned"
+        label = f"{unit['UnitName']} and subordinate units" if unit else "no unit assigned"
         return ScopeDescription(
-            label=f"{label} and subordinate units",
+            label=label,
             unit_count=len(principal.scope.unit_ids),
             statewide=False,
         )

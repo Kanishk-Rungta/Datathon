@@ -24,9 +24,13 @@ Two runtime defects are also corrected here, found while implementing Phase 1:
    ``KSPCIP_CATALYST_ENVIRONMENT`` (``Development``/``Production``, which
    Catalyst already asks a deployer to name) instead of inventing a new enum
    value the settings model does not know about.
-2. Only a *default* is set, via ``setdefault``, on both variables — an
+2. Only a *default* is set, via ``setdefault``, on every variable — an
    operator who has explicitly exported ``KSPCIP_ENVIRONMENT`` (e.g. to
    ``staging``) is never overridden.
+3. **The file store is defaulted alongside the data store.** Setting only
+   ``KSPCIP_DATASTORE_BACKEND=catalyst`` produces a combination the settings
+   validator rejects by design, so every first deploy died at startup on a
+   configuration error rather than on anything the deployer did.
 """
 
 from __future__ import annotations
@@ -80,6 +84,15 @@ def bootstrap(entrypoint_file: str) -> None:
         sys.path.insert(0, str(vendor_dir))
 
     os.environ.setdefault("KSPCIP_DATASTORE_BACKEND", "catalyst")
+    # The two are a pair, not independent, once the data store is Catalyst:
+    # `Settings.deployment_problems()` refuses `datastore=catalyst` with
+    # `filestore=local` outright, because an export written to a function's
+    # own disk is gone at the next cold start and the audit row would then
+    # cite a file nobody can fetch. Defaulting only the data store therefore
+    # guaranteed that the *first* deploy of every component failed at startup
+    # on a configuration error the deployer had no way to anticipate.
+    # `setdefault` again: an operator who has stated a filestore keeps it.
+    os.environ.setdefault("KSPCIP_FILESTORE_BACKEND", "catalyst")
 
     catalyst_env = os.environ.get("KSPCIP_CATALYST_ENVIRONMENT", "Development")
     inferred = "production" if catalyst_env.strip().lower() == "production" else "development"

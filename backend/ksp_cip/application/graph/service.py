@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
+from datetime import date, datetime
 from typing import Any, Iterable, Sequence
 
 import networkx as nx
@@ -246,6 +247,199 @@ class GraphService:
         results.sort(key=lambda item: item["size"], reverse=True)
         return results[:limit]
 
+    def communities_view(
+        self,
+        communities: list[dict[str, Any]],
+        scope: UnitScope,
+        *,
+        max_members_per_cluster: int = 12,
+        max_nodes: int = 120,
+    ) -> GraphView:
+        """A renderable subgraph of the top clusters, for the network overview.
+
+        "Show me criminal networks" (no named subject) used to return a plain
+        table of cluster sizes. This assembles the actual members and the
+        scope-allowed links among them so the console can *draw* the clusters —
+        the visualization the brief asks for. Each cluster is capped so a very
+        large component does not swamp the picture; the cap is stated in the
+        answer, not hidden.
+        """
+        graph = self.graph
+        member_nodes: list[str] = []
+        for community in communities:
+            member_nodes.extend(community["members"][:max_members_per_cluster])
+            if len(member_nodes) >= max_nodes:
+                break
+        member_set = set(member_nodes[:max_nodes])
+        if not member_set:
+            return GraphView()
+
+        links: list[GraphLink] = []
+        seen_edges: set[tuple[str, str, str]] = set()
+        for node in member_set:
+            if node not in graph:
+                continue
+            for _source, neighbour, data in graph.edges(node, data=True):
+                if neighbour not in member_set:
+                    continue
+                if not self._edge_allowed(data, scope):
+                    continue
+                key = (min(node, neighbour), max(node, neighbour), data["edge_type"])
+                if key in seen_edges:
+                    continue
+                seen_edges.add(key)
+                links.append(GraphLink(
+                    source=node, target=neighbour,
+                    edge_type=EdgeType(data["edge_type"])
+                    if data["edge_type"] in EdgeType.__members__.values() else EdgeType.CO_ACCUSED,
+                    weight=data["weight"],
+                    case_master_ids=data["case_ids"],
+                    provenance=Provenance(data.get("provenance", "inferred")),
+                ))
+
+        node_community: dict[str, int] = {}
+        for community in communities:
+            for member in community["members"][:max_members_per_cluster]:
+                node_community[member] = community["community_id"]
+
+        nodes = [
+            GraphNode(
+                node_id=node_id,
+                node_type=_node_type(graph.nodes[node_id].get("node_type", "Entity"))
+                if node_id in graph else _node_type("Entity"),
+                label=self.label_for(node_id),
+                attributes={"community": node_community.get(node_id, 0)},
+            )
+            for node_id in member_set
+        ]
+        subgraph = graph.subgraph(member_set)
+        return GraphView(
+            nodes=nodes,
+            links=links,
+            communities=node_community,
+            centrality={node: round(value, 4) for node, value in _degree_centrality(subgraph).items()},
+        )
+
+    def organised_activity(
+        self,
+        scope: UnitScope,
+        *,
+        case_dates: dict[int, str] | None = None,
+        case_districts: dict[int, int] | None = None,
+        min_size: int = 3,
+        max_size: int = 12,
+        min_shared_cases: int = 2,
+        min_cohesion: float = 0.30,
+        limit: int = 5,
+    ) -> list["OrganisedActivitySignal"]:
+        """Co-accused clusters that recur across cases rather than once.
+
+        Three properties separate sustained joint activity from people who
+        merely appeared on one FIR together, and all three are published:
+
+        * **recurrence** — the cluster shares at least ``min_shared_cases``
+          FIRs, so a single multi-accused incident does not qualify;
+        * **cohesion** — how densely its members are actually linked. This is a
+          hard gate, not a scoring nudge: community detection happily returns a
+          38-person component at 5% density, and reporting that as an organised
+          group would be a confident answer to a question the data cannot
+          support; and
+        * **reach** — how many districts and how long a span the cases cover.
+
+        ``max_size`` exists for the same reason. Past roughly a dozen people a
+        "community" is a connected region of the co-accused graph rather than a
+        group who act together, so it is not reported as one.
+
+        Scope is applied to the underlying edges, so a caller only ever sees
+        clusters built from records they are authorised to read.
+        """
+        graph = self.graph
+        assignment = self.communities()
+        grouped: dict[int, list[str]] = {}
+        for node, community in assignment.items():
+            if node.startswith("person:"):
+                grouped.setdefault(community, []).append(node)
+
+        signals: list[OrganisedActivitySignal] = []
+        for community, members in grouped.items():
+            if not (min_size <= len(members) <= max_size):
+                continue
+
+            case_counts: dict[int, int] = {}
+            edge_types: set[str] = set()
+            internal_edges = 0
+            member_set = set(members)
+            for source, target, data in graph.edges(members, data=True):
+                if not self._edge_allowed(data, scope):
+                    continue
+                if source in member_set and target in member_set:
+                    internal_edges += 1
+                    edge_types.add(str(data.get("edge_type")))
+                for case_id in data.get("case_ids", []):
+                    case_counts[int(case_id)] = case_counts.get(int(case_id), 0) + 1
+
+            if not case_counts:
+                continue
+            # A case touched by more than one internal edge is one the cluster
+            # shares, rather than one a single member happens to appear on.
+            shared = [c for c, hits in case_counts.items() if hits > 1]
+            if len(shared) < min_shared_cases:
+                continue
+
+            size = len(members)
+            possible = size * (size - 1) / 2
+            cohesion = round(min(internal_edges / possible, 1.0), 4) if possible else 0.0
+            if cohesion < min_cohesion:
+                # Loosely connected people are not a group, however many cases
+                # they collectively touch.
+                continue
+
+            districts = {case_districts.get(c) for c in case_counts} if case_districts else set()
+            districts.discard(None)
+            dates = sorted(
+                d for d in ((case_dates or {}).get(c) for c in case_counts) if d
+            )
+            span_days = 0
+            if len(dates) >= 2:
+                start, end = _parse_day(dates[0]), _parse_day(dates[-1])
+                if start and end:
+                    span_days = (end - start).days
+
+            # Published weights, like every other score in this platform.
+            # Cohesion carries the most weight: acting together is what the
+            # signal claims, and breadth without it is just a large component.
+            score = round(min(
+                cohesion * 40.0
+                + min(len(shared) / 6.0, 1.0) * 35.0
+                + min(max(len(districts) - 1, 0) / 3.0, 1.0) * 10.0
+                + min(span_days / 365.0, 1.0) * 15.0,
+                100.0,
+            ), 2)
+            band = "high" if score >= 65 else "medium" if score >= 40 else "low"
+
+            centrality = self.centrality(node_prefix="person:")
+            ranked = sorted(members, key=lambda n: centrality.get(n, 0.0), reverse=True)
+            signals.append(OrganisedActivitySignal(
+                community_id=community,
+                size=size,
+                members=ranked,
+                member_labels=[self.label_for(node) for node in ranked],
+                case_count=len(case_counts),
+                case_ids=sorted(case_counts)[:200],
+                shared_case_count=len(shared),
+                district_count=len(districts),
+                first_seen=dates[0] if dates else None,
+                last_seen=dates[-1] if dates else None,
+                span_days=span_days,
+                edge_types=sorted(edge_types),
+                cohesion=cohesion,
+                score=score,
+                band=band,
+            ))
+
+        signals.sort(key=lambda s: s.score, reverse=True)
+        return signals[:limit]
+
     def centrality(self, *, node_prefix: str | None = None) -> dict[str, float]:
         graph = self.graph
         if graph.number_of_nodes() == 0:
@@ -275,6 +469,41 @@ class GraphService:
         for _source, _target, data in graph.edges(node, data=True):
             case_ids.update(int(c) for c in data.get("case_ids", []))
         return sorted(case_ids)
+
+
+@dataclass(slots=True)
+class OrganisedActivitySignal:
+    """A co-accused cluster showing the shape of sustained joint activity.
+
+    Deliberately **not** called a gang. Whether a group is an organised
+    criminal enterprise is a legal and investigative determination; what the
+    records can show is that the same people appear together across several
+    FIRs, over a period, sometimes across districts. That is a shape worth
+    looking at, and this type carries only that.
+    """
+
+    community_id: int
+    size: int
+    members: list[str]
+    member_labels: list[str]
+    case_count: int
+    case_ids: list[int]
+    shared_case_count: int
+    district_count: int
+    first_seen: str | None
+    last_seen: str | None
+    span_days: int
+    edge_types: list[str]
+    cohesion: float
+    score: float
+    band: str
+
+
+def _parse_day(value: Any) -> date | None:
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
 
 
 def _degree_centrality(graph: nx.Graph) -> dict[str, float]:

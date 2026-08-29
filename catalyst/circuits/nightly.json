@@ -1,7 +1,7 @@
 {
   "name": "cip_nightly",
-  "description": "Nightly pipeline. Each state calls a function that exists and is tested locally; the Circuit adds scheduling and retry, not logic.",
-  "schedule": { "cron": "0 2 * * *", "timezone": "Asia/Kolkata" },
+  "description": "Nightly pipeline. Each state calls a function that exists and is tested locally; the Circuit adds orchestration and retry, not logic.",
+  "comment": "A Circuit does NOT schedule itself. Catalyst Cron is what invokes a Circuit on a schedule (Cron's schedule points are: a function, a third-party URL, or a Circuit). The nightly 02:00 IST schedule therefore lives on the `cip_nightly_trigger` cron in catalyst.json, not here -- an earlier `schedule` block in this file was not a Circuits field and would never have fired.",
   "start_at": "ingest",
   "states": {
     "ingest": {

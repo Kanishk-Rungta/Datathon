@@ -34,6 +34,13 @@ class FakeReference:
         lowered = name.casefold()
         if lowered.startswith("mysor") or lowered.startswith("mysur"):
             return {"DistrictID": 2922, "DistrictName": "Mysuru"}
+        if lowered.startswith("bengaluru") or lowered.startswith("bangalore"):
+            return {"DistrictID": 2904, "DistrictName": "Bengaluru City"}
+        return None
+
+    def resolve_unit(self, name):
+        # The real ReferenceRepository resolves station names; the NLU calls it
+        # while disambiguating place phrases. No unit fixtures are needed here.
         return None
 
     def resolve_crime_sub_head(self, name):
@@ -77,8 +84,66 @@ class TestIntentClassification:
         ("Find cases similar to this one", Intent.SIMILAR_CASE),
         ("Give me a briefing on this case", Intent.INVESTIGATION_SUMMARY),
         ("Break down complainants by occupation", Intent.DEMOGRAPHIC_INSIGHT),
+        ("Forecast theft cases in Mysuru for the next quarter", Intent.FORECAST_QUERY),
+        ("How many cases should we expect statewide next month?", Intent.FORECAST_QUERY),
+        ("Project case volumes for resource planning", Intent.FORECAST_QUERY),
     ])
     def test_representative_questions_route_correctly(self, engine, text, expected):
+        assert engine.classify(text).intent is expected
+
+    @pytest.mark.parametrize("text,expected", [
+        ("Where will crime concentrate next month?", Intent.SPATIOTEMPORAL_QUERY),
+        ("Show me predicted hotspots", Intent.SPATIOTEMPORAL_QUERY),
+        ("Which areas are likely to see more theft next quarter?", Intent.SPATIOTEMPORAL_QUERY),
+        ("spatial risk forecast", Intent.SPATIOTEMPORAL_QUERY),
+    ])
+    def test_spatial_forecast_questions_route_correctly(self, engine, text, expected):
+        assert engine.classify(text).intent is expected
+
+    @pytest.mark.parametrize("text,expected", [
+        # "Where are the hotspots" is about what has already been recorded;
+        # "where will crime concentrate" is about what has not happened yet.
+        ("Where are the hotspots right now?", Intent.HOTSPOT_QUERY),
+        ("Where are the hotspots?", Intent.HOTSPOT_QUERY),
+        # A count over time is not a spatial question.
+        ("Forecast theft cases in Mysuru for the next quarter", Intent.FORECAST_QUERY),
+        ("How many cases should we expect statewide next month?", Intent.FORECAST_QUERY),
+    ])
+    def test_spatial_forecast_does_not_swallow_hotspots_or_forecast(self, engine, text, expected):
+        assert engine.classify(text).intent is expected
+
+    @pytest.mark.parametrize("text,expected", [
+        ("What is the crime trend this year?", Intent.TREND_QUERY),
+        ("Show me the seasonal pattern for festival months", Intent.SEASONAL_QUERY),
+        ("Where are the hotspots?", Intent.HOTSPOT_QUERY),
+        ("Show me early warning alerts", Intent.EARLY_WARNING),
+    ])
+    def test_forecast_does_not_swallow_its_neighbours(self, engine, text, expected):
+        """"What happened" and "what will happen" are different questions.
+
+        FORECAST_QUERY is weighted above TREND and SEASONAL so a forward-looking
+        phrase wins a tie; it must not take backward-looking ones with it.
+        """
+        assert engine.classify(text).intent is expected
+
+    @pytest.mark.parametrize("text,expected", [
+        # Plural "networks" (a trailing \b failed on the s), and organised crime.
+        ("Show me criminal networks", Intent.NETWORK_QUERY),
+        ("Show me organised crime groups", Intent.NETWORK_QUERY),
+        ("Detect organized crime rings", Intent.NETWORK_QUERY),
+        # The brief's own socio-economic wording, which used to fall through.
+        ("Correlation of crime with literacy and unemployment across districts",
+         Intent.SOCIOECONOMIC_QUERY),
+        ("How does urbanization and migration correlate with crime",
+         Intent.SOCIOECONOMIC_QUERY),
+        ("Relationship between poverty and offences", Intent.SOCIOECONOMIC_QUERY),
+        # Demographic breakdowns by facet.
+        ("Victim breakdown by age and gender", Intent.DEMOGRAPHIC_INSIGHT),
+        ("Break down complainants by occupation", Intent.DEMOGRAPHIC_INSIGHT),
+    ])
+    def test_brief_wording_reaches_the_right_specialist(self, engine, text, expected):
+        """The exact phrasing a reviewer reads off the brief must route, not
+        fall through to a generic FIR list."""
         assert engine.classify(text).intent is expected
 
     def test_classification_is_deterministic(self, engine):
@@ -108,6 +173,18 @@ class TestSlotExtraction:
         """"Theft" is a family; answering with one sub-head would be a narrower question."""
         ids = engine.extract_slots("theft cases in Mysuru").crime_sub_head_ids
         assert set(ids) == {201, 202, 203}
+
+    def test_network_subject_is_extracted_after_a_relational_cue(self, engine):
+        """"the network around X" must yield X as a person, or the graph never renders."""
+        assert "Ramesh Gowda" in engine.extract_slots("Show the network around Ramesh Gowda").person_names
+        assert "Suresh Kumar" in engine.extract_slots("How is Suresh Kumar connected to others").person_names
+
+    def test_a_place_after_about_is_not_read_as_a_person(self, engine):
+        """"What about Mysuru" is a location, not an accused named Mysuru."""
+        slots = engine.extract_slots("What about Mysuru instead")
+        assert 2922 in slots.district_ids
+        assert "Mysuru" not in slots.person_names
+        assert "Mysore" not in slots.person_names
 
     def test_crime_no_is_recognised(self, engine):
         assert engine.extract_slots("open FIR 104430006202600001").crime_nos == ["104430006202600001"]

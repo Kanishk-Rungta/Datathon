@@ -1,10 +1,9 @@
 /* AppSail static host for the console.
  *
- * Only two responsibilities: serve the built React console, and forward
- * `/api` to the cip-api AppSail service (see
- * docs/deployment/catalyst-runtime.md for why this is an AppSail service and
- * not a Function) so the browser sees a single origin. Anything else belongs
- * in the backend, not here.
+ * Only two responsibilities: serve `frontend/dist`, and forward `/api` to the
+ * cip-api AppSail service (see docs/deployment/catalyst-runtime.md for why
+ * this is an AppSail service and not a Function) so the browser sees a single
+ * origin. Anything else belongs in the backend, not here.
  */
 const http = require('http')
 const https = require('https')
@@ -12,16 +11,36 @@ const fs = require('fs')
 const path = require('path')
 
 const PORT = process.env.X_ZOHO_CATALYST_LISTEN_PORT || 9000
-// Two layouts, resolved the same way `catalyst/_bootstrap.py` resolves the
-// API's package path: a `dist` sibling staged by
-// `scripts/build_catalyst_artifact.py --target console` (deployment), or the
-// repo-relative `frontend/dist` when running this file straight out of the
-// checkout (local dev, e.g. `scripts/dev.sh` / the D1 console smoke test).
-// Don't collapse this to one path -- the staged layout has no repo above it.
-const STAGED_DIST = path.resolve(__dirname, 'dist')
-const CHECKOUT_DIST = path.resolve(__dirname, '../../../frontend/dist')
-const DIST = fs.existsSync(path.join(STAGED_DIST, 'index.html')) ? STAGED_DIST : CHECKOUT_DIST
 const API_TARGET = process.env.CIP_API_URL
+
+/* Where the built console lives, resolved in the same spirit as
+ * `catalyst/_bootstrap.py`: the staged artifact first, the repo checkout second.
+ *
+ * Catalyst zips and ships only the directory named by `source` in catalyst.json
+ * (`appsail/console`). A path reaching back up to `../../../frontend/dist`
+ * therefore resolves on a developer's machine and to nothing at all once
+ * deployed -- the same defect P1-03 fixed for the Python entrypoints. So:
+ *
+ *   1. CIP_CONSOLE_DIST, if an operator names one explicitly;
+ *   2. `dist/` beside this file -- what `scripts/build_catalyst_artifact.py
+ *      --target console` stages, and the only one that exists once deployed;
+ *   3. the repo-relative `frontend/dist`, so `node server.js` still works
+ *      straight out of a checkout during development.
+ */
+function resolveDist() {
+  const candidates = [
+    process.env.CIP_CONSOLE_DIST,
+    path.resolve(__dirname, 'dist'),
+    path.resolve(__dirname, '../../../frontend/dist'),
+  ].filter(Boolean)
+  for (const candidate of candidates) {
+    if (fs.existsSync(path.join(candidate, 'index.html'))) return candidate
+  }
+  // Nothing found: keep the staged location so the 404 path names somewhere real.
+  return path.resolve(__dirname, 'dist')
+}
+
+const DIST = resolveDist()
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -44,12 +63,7 @@ http.createServer((req, res) => {
     // a public endpoint is, so the client module must match the target's own
     // scheme rather than always assuming https.
     const client = target.protocol === 'http:' ? http : https
-    // The inbound Host names *this* service. Forwarding it verbatim to a
-    // different origin makes AppSail's front end reject the request with a
-    // bare 400 before it reaches the API at all. Locally both sides were
-    // 127.0.0.1, so this only shows up once the two are really separate hosts.
-    const headers = { ...req.headers, host: target.host }
-    const proxied = client.request(target, { method: req.method, headers }, (upstream) => {
+    const proxied = client.request(target, { method: req.method, headers: req.headers }, (upstream) => {
       res.writeHead(upstream.statusCode, upstream.headers)
       upstream.pipe(res)
     })
@@ -63,7 +77,11 @@ http.createServer((req, res) => {
 
   const requested = req.url.split('?')[0]
   const candidate = path.join(DIST, requested === '/' ? 'index.html' : requested)
-  const resolved = candidate.startsWith(DIST) ? candidate : path.join(DIST, 'index.html')
+  // Compare against DIST *plus a separator*: a bare `startsWith(DIST)` also
+  // accepts a sibling whose name merely begins with it (`.../dist-backup/x`
+  // starts with `.../dist`), which a `/../dist-backup/x` request reaches.
+  const inside = candidate === DIST || candidate.startsWith(DIST + path.sep)
+  const resolved = inside ? candidate : path.join(DIST, 'index.html')
 
   fs.readFile(resolved, (error, body) => {
     if (error) {
@@ -78,4 +96,4 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': TYPES[path.extname(resolved)] || 'application/octet-stream' })
     res.end(body)
   })
-}).listen(PORT, () => console.log(`cip-console listening on ${PORT}`))
+}).listen(PORT, () => console.log(`cip-console listening on ${PORT}, serving ${DIST}`))

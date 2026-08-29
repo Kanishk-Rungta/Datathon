@@ -11,6 +11,8 @@ Three cross-cutting behaviours are installed here and nowhere else:
 
 from __future__ import annotations
 
+import mimetypes
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +44,7 @@ from .routers import (
     health,
     investigation,
     session,
+    voice,
 )
 
 LOGGER = get_logger(__name__)
@@ -61,12 +64,28 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     settings = settings or get_settings()
     container = container or build_container(settings)
 
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):  # type: ignore[no-untyped-def]
+        """Warm the caches that a first request would otherwise pay for.
+
+        A lifespan handler rather than ``@app.on_event("startup")``: the event
+        decorators have been deprecated since FastAPI 0.109 and are scheduled
+        for removal, and this application is deployed to a platform whose
+        Python stack version is chosen at provisioning time (see
+        docs/deployment/catalyst-runtime.md) — so it must not depend on an API
+        that a newer pinned FastAPI would drop out from under it.
+        """
+        stats = container.warm()
+        LOGGER.info("startup_warm", extra=stats)
+        yield
+
     app = FastAPI(
         title=settings.app_name,
         description=DESCRIPTION,
         version="1.0.0",
         docs_url=f"{settings.api_prefix}/docs",
         openapi_url=f"{settings.api_prefix}/openapi.json",
+        lifespan=lifespan,
     )
     app.state.container = container
     app.state.settings = settings
@@ -164,11 +183,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(export.router, prefix=prefix)
     app.include_router(files.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
-
-    @app.on_event("startup")
-    async def warm_caches() -> None:
-        stats = container.warm()
-        LOGGER.info("startup_warm", extra=stats)
+    app.include_router(voice.router, prefix=prefix)
 
     _mount_frontend(app)
     return app
@@ -191,7 +206,18 @@ def _mount_frontend(app: FastAPI) -> None:
 
     Mounted last and at the root so every API path takes precedence. Absence of
     a build is not an error — the backend is fully usable on its own.
+
+    ``mimetypes.guess_type`` falls back to the OS registry, and some Windows
+    installs map ``.js``/``.mjs`` to ``text/plain`` (an unrelated app can
+    overwrite the ``HKEY_CLASSES_ROOT\\.js`` entry). Browsers enforce strict
+    MIME checking on ES module scripts, so a wrong content type is a blank,
+    silently-broken console rather than a visible error. Registering the
+    correct types before mounting keeps the console working regardless of
+    the host's registry.
     """
+    mimetypes.add_type("application/javascript", ".js")
+    mimetypes.add_type("application/javascript", ".mjs")
+    mimetypes.add_type("text/css", ".css")
     dist = Path(__file__).resolve().parents[4] / "frontend" / "dist"
     if dist.is_dir():
         app.mount("/", StaticFiles(directory=str(dist), html=True), name="console")

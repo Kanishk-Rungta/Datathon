@@ -84,6 +84,22 @@ class TestConversationMemory:
         assert second.intent is Intent.INVESTIGATION_SUMMARY
         assert second.evidence
 
+    def test_a_pronoun_after_an_offender_list_resolves_to_that_person(self, container, investigator):
+        """"How is *he* connected?" must reach the person's ego network.
+
+        The offender-profile result used to publish only identity_ids and
+        case_master_ids, so no person name was pinned; the pronoun fell
+        through to the case branch and answered with an out-of-scope FIR
+        error instead of a link graph.
+        """
+        session = "offender-pronoun-session"
+        first = ask(container, investigator, "Who are the repeat offenders?", session)
+        assert first.intent is Intent.OFFENDER_PROFILE
+        second = ask(container, investigator, "How is he connected to others?", session)
+        assert second.intent is Intent.NETWORK_QUERY
+        assert "not available within your authorized scope" not in second.answer_text
+        assert second.evidence
+
     def test_the_transcript_is_persisted(self, container, analyst):
         session = "transcript-session"
         ask(container, analyst, "What is the crime trend this year?", session)
@@ -140,6 +156,7 @@ class TestInvestigationSupport:
         assert answer.payload.payload_type == "timeline"
         assert answer.payload.data["events"]
         assert row["CrimeNo"] in answer.answer_text
+        assert "None §None" not in answer.answer_text
 
     def test_the_priority_indicator_is_fully_decomposed(self, container, analyst):
         row = container.store.query(
@@ -171,6 +188,42 @@ class TestSeasonalAnalysis:
         answer = ask(container, analyst, "What is the seasonal trend for theft?")
         assert answer.intent is Intent.SEASONAL_QUERY
         assert "not a forecast" in answer.answer_text.lower()
+
+
+class TestForecastScope:
+    """An aggregate forecast must survive a conversation that mentioned a person.
+
+    The refusal gate on ``_forecast`` used to read ``pinned_person_names`` as
+    well as the current turn's slots. A pin lasts the whole session, so once
+    an officer had asked about repeat offenders, every later planning question
+    in that conversation -- "forecast crime for the next three months", which
+    names nobody -- came back as "this platform does not forecast whether a
+    particular person will offend". Refusing the prohibited question is the
+    point; refusing the permitted one because of an earlier turn is a defect.
+    """
+
+    def test_an_aggregate_forecast_after_a_person_turn_still_forecasts(self, container, analyst):
+        session = "forecast-after-person"
+        offenders = ask(container, analyst, "Who are the repeat offenders?", session)
+        assert offenders.intent is Intent.OFFENDER_PROFILE
+
+        answer = ask(container, analyst, "Forecast crime for the next three months", session)
+        assert answer.intent is Intent.FORECAST_QUERY
+        assert "does not forecast whether a particular person" not in answer.answer_text
+        assert answer.payload.payload_type == "forecast"
+
+    def test_a_person_follow_up_in_the_same_session_is_still_refused(self, container, analyst):
+        """The legitimate refusal path: the pronoun resolves to the pinned name
+        through MemoryService, so it lands in the current turn's slots."""
+        session = "forecast-person-followup"
+        ask(container, analyst, "Who are the repeat offenders?", session)
+        answer = ask(container, analyst, "Will he reoffend next year?", session)
+        assert "does not forecast whether a particular person" in answer.answer_text
+
+    def test_a_named_individual_forecast_is_refused_outright(self, container, analyst):
+        answer = ask(container, analyst, "Predict who will commit a crime next month",
+                     "forecast-named")
+        assert "does not forecast whether a particular person" in answer.answer_text
 
 
 class TestSociologySubjectSelector:

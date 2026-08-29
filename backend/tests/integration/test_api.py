@@ -63,6 +63,32 @@ class TestAuthentication:
         assert payload["username"] == "analyst.state"
         assert payload["role"] == "analyst"
 
+    def test_demo_accounts_are_listed_in_synthetic_environments(self):
+        """A reviewer opening a Development deployment must be able to sign in.
+
+        The account list was hidden everywhere but ``local``, so the deployed
+        login screen showed no credentials and a reviewer had no way in. It is
+        now shown wherever the data is synthetic (``local`` and
+        ``development``) and withheld where it may be real.
+        """
+        from ksp_cip.config.settings import Environment
+        from ksp_cip.interface.api.routers.session import demo_accounts
+
+        class _Container:
+            def __init__(self, env):
+                from ksp_cip.config.settings import Settings
+                self.settings = Settings(environment=env)
+
+        for env in (Environment.LOCAL, Environment.DEVELOPMENT):
+            body = demo_accounts(_Container(env))
+            assert body["accounts"], f"{env} must list demo accounts"
+            assert body["password"], f"{env} must expose the shared demo password"
+
+        for env in (Environment.STAGING, Environment.PRODUCTION):
+            body = demo_accounts(_Container(env))
+            assert body["accounts"] == [], f"{env} must not list demo accounts"
+            assert "password" not in body, f"{env} must not expose a password"
+
 
 class TestErrorShape:
     def test_unknown_routes_return_a_problem_document(self, client, tokens):
@@ -146,6 +172,56 @@ class TestChatContract:
         assert len(turns) >= 1
 
 
+class TestTranscribeEndpoint:
+    """The one endpoint that accepts an attacker-sized binary body.
+
+    The local build has no ASR provider, so these assert the *boundary*: bad
+    input is refused with a stated reason before any provider is consulted, and
+    an absent provider is reported honestly rather than faked.
+    """
+
+    def test_an_unknown_language_is_refused_with_a_reason(self, client, tokens):
+        response = client.post(
+            "/api/v1/chat/transcribe", headers=auth(tokens, "analyst"),
+            files={"audio": ("a.wav", b"RIFF....", "audio/wav")}, data={"language": "fr"},
+        )
+        assert response.status_code == 422
+        assert "fr" in response.json()["detail"]
+
+    def test_an_empty_upload_is_refused(self, client, tokens):
+        response = client.post(
+            "/api/v1/chat/transcribe", headers=auth(tokens, "analyst"),
+            files={"audio": ("a.wav", b"", "audio/wav")}, data={"language": "kn"},
+        )
+        assert response.status_code == 422
+
+    def test_an_oversized_upload_is_refused_rather_than_buffered(self, client, tokens):
+        response = client.post(
+            "/api/v1/chat/transcribe", headers=auth(tokens, "analyst"),
+            files={"audio": ("a.wav", b"x" * (10 * 1024 * 1024 + 1), "audio/wav")},
+            data={"language": "kn"},
+        )
+        assert response.status_code == 422
+        assert "limit" in response.json()["detail"]
+
+    def test_an_absent_asr_provider_is_reported_not_faked(self, client, tokens):
+        """No provider is configured locally, so this must say so."""
+        response = client.post(
+            "/api/v1/chat/transcribe", headers=auth(tokens, "analyst"),
+            files={"audio": ("a.wav", b"RIFF....", "audio/wav")}, data={"language": "kn"},
+        )
+        # The local lexicon raises ProviderError rather than returning a guess.
+        assert response.status_code == 502
+        assert response.json()["code"] == "provider_unavailable"
+
+    def test_authentication_is_required(self, client):
+        response = client.post(
+            "/api/v1/chat/transcribe",
+            files={"audio": ("a.wav", b"RIFF....", "audio/wav")}, data={"language": "kn"},
+        )
+        assert response.status_code in (401, 403)
+
+
 class TestAnalyticsEndpoints:
     def test_trend_returns_a_dense_series(self, client, tokens):
         payload = client.post("/api/v1/analytics/trend", headers=auth(tokens, "analyst"),
@@ -202,6 +278,153 @@ class TestAnalyticsEndpoints:
         assert response.status_code == 404
 
 
+class TestForecastEndpoint:
+    def test_a_forecast_returns_ranges_with_its_method_and_backtest(self, client, tokens):
+        payload = client.post("/api/v1/analytics/forecast", headers=auth(tokens, "analyst"),
+                              json={"horizon_months": 3}).json()
+        assert payload["is_forecast"] is True
+        if payload["insufficient_history"]:
+            assert payload["points"] == []
+            return
+        assert payload["points"]
+        for point in payload["points"]:
+            assert point["lower"] <= point["expected"] <= point["upper"]
+        assert payload["backtests"], "the method must show it was measured, not chosen by preference"
+        assert payload["method"] in {"rolling-rate", "seasonal-naive"}
+
+    def test_the_caveat_states_it_is_not_about_an_individual(self, client, tokens):
+        payload = client.post("/api/v1/analytics/forecast", headers=auth(tokens, "analyst"),
+                              json={}).json()
+        assert "not a statement about any individual" in payload["caveat"]
+
+    def test_the_request_schema_has_no_person_field(self, client, tokens):
+        """Aggregate-only is enforced by the contract, not by convention."""
+        response = client.post("/api/v1/analytics/forecast", headers=auth(tokens, "analyst"),
+                               json={"person_name": "Ramesh", "horizon_months": 3})
+        assert response.status_code == 200
+        # The unknown field is ignored, never honoured.
+        assert response.json()["is_forecast"] is True
+
+    def test_aggregates_permission_is_required(self, client):
+        assert client.post("/api/v1/analytics/forecast", json={}).status_code in (401, 403)
+
+
+class TestPayloadsReachTheirRenderers:
+    """Each analytic must arrive at the console in the shape its renderer reads.
+
+    These three were all built and then left dark: early warning emitted
+    `table` so its alert-card renderer never ran, the forecast renderer had no
+    render case at all, and spatiotemporal had no intent so chat could not
+    reach it. A payload type is only useful if the question routes to it *and*
+    the data keys match, so both are asserted here.
+    """
+
+    def test_early_warning_renders_as_alert_cards(self, client, tokens):
+        payload = client.post("/api/v1/chat", headers=auth(tokens, "analyst"),
+                              json={"message": "Any early warning alerts?",
+                                    "session_id": "pv-ew"}).json()
+        assert payload["intent"] == "EARLY_WARNING"
+        assert payload["payload"]["payload_type"] == "early_warning"
+        data = payload["payload"]["data"]
+        assert "caveat" in data
+        for alert in data.get("alerts", []):
+            # Exactly the keys EarlyWarningAlerts reads.
+            assert {"alert_id", "severity", "district_name", "sigma",
+                    "observed_count", "baseline_mean"} <= set(alert)
+
+    def test_a_forecast_renders_as_a_projection_not_a_line_chart(self, client, tokens):
+        payload = client.post("/api/v1/chat", headers=auth(tokens, "analyst"),
+                              json={"message": "Forecast cases for the next quarter",
+                                    "session_id": "pv-fc"}).json()
+        assert payload["intent"] == "FORECAST_QUERY"
+        kind = payload["payload"]["payload_type"]
+        # Either a projection, or an evidenced refusal when history is short.
+        assert kind in {"forecast", "none"}
+        if kind == "forecast":
+            data = payload["payload"]["data"]
+            assert data["points"], "ForecastProjection reads data.points"
+            for point in data["points"]:
+                assert {"period", "expected", "lower", "upper"} <= set(point)
+            assert "caveat" in data and "method" in data
+
+    def test_spatiotemporal_is_reachable_from_chat(self, client, tokens):
+        """The regression: it existed only as an endpoint, unreachable by asking."""
+        payload = client.post("/api/v1/chat", headers=auth(tokens, "analyst"),
+                              json={"message": "Where will crime concentrate next month?",
+                                    "session_id": "pv-st"}).json()
+        assert payload["intent"] == "SPATIOTEMPORAL_QUERY"
+        kind = payload["payload"]["payload_type"]
+        assert kind in {"spatiotemporal_forecast", "none"}
+        if kind == "spatiotemporal_forecast":
+            data = payload["payload"]["data"]
+            assert {"horizon_days", "grid_metres", "window_start", "window_end",
+                    "predicted_cells", "caveat"} <= set(data)
+            for cell in data["predicted_cells"]:
+                assert {"cell_id", "lat", "lon", "expected_count", "lower_bound",
+                        "upper_bound", "hotspot_probability", "risk_level"} <= set(cell)
+
+    def test_the_network_overview_renders_as_a_graph(self, client, tokens):
+        """"Show me criminal networks" (no name) must draw the clusters, not a
+        table — the visualization the brief asks for."""
+        payload = client.post("/api/v1/chat", headers=auth(tokens, "analyst"),
+                              json={"message": "Show me criminal networks",
+                                    "session_id": "pv-net"}).json()
+        assert payload["intent"] == "NETWORK_QUERY"
+        kind = payload["payload"]["payload_type"]
+        # A graph when clusters exist; a table only if scope trimmed everything.
+        assert kind in {"graph", "table"}
+        if kind == "graph":
+            data = payload["payload"]["data"]
+            assert data["nodes"], "the clusters must carry drawable nodes"
+            for node in data["nodes"]:
+                assert {"id", "label", "community"} <= set(node)
+
+    def test_organised_crime_wording_reaches_the_network_graph(self, client, tokens):
+        payload = client.post("/api/v1/chat", headers=auth(tokens, "analyst"),
+                              json={"message": "Show me organised crime groups",
+                                    "session_id": "pv-org"}).json()
+        assert payload["intent"] == "NETWORK_QUERY"
+        assert payload["payload"]["payload_type"] in {"graph", "table"}
+
+    def test_a_projection_always_says_it_is_not_a_record(self, client, tokens):
+        for message, session in [
+            ("Forecast cases for the next quarter", "pv-c1"),
+            ("Where will crime concentrate next month?", "pv-c2"),
+        ]:
+            payload = client.post("/api/v1/chat", headers=auth(tokens, "analyst"),
+                                  json={"message": message, "session_id": session}).json()
+            text = " ".join(c["text"] for c in payload["claims"]).lower()
+            assert "not a prediction of specific crimes" in text or "not a statement about any individual" in text
+
+
+class TestIndividualPredictionIsRefused:
+    """The boundary the brief draws, asserted end to end.
+
+    Routing a person-directed forecast to an aggregate answer would be worse
+    than refusing: the officer asked about an individual and would receive a
+    confident-looking number that appears to answer them.
+    """
+
+    @pytest.mark.parametrize("question", [
+        "Predict which person will commit theft next month",
+        "Which accused will offend next month?",
+        "Who will commit a crime next year?",
+    ])
+    def test_the_platform_refuses_and_says_why(self, client, tokens, question):
+        payload = client.post("/api/v1/chat", headers=auth(tokens, "analyst"),
+                              json={"message": question, "session_id": f"refuse-{hash(question) & 0xFFFF}"}).json()
+        text = " ".join(claim["text"] for claim in payload["claims"]).lower()
+        assert "does not forecast whether a particular person will offend" in text
+        assert not payload["payload"]["data"].get("points"), "no projection may be returned"
+
+    def test_the_refusal_offers_the_capability_that_does_exist(self, client, tokens):
+        payload = client.post("/api/v1/chat", headers=auth(tokens, "analyst"),
+                              json={"message": "Who will commit a crime next year?",
+                                    "session_id": "refuse-alt"}).json()
+        text = " ".join(claim["text"] for claim in payload["claims"]).lower()
+        assert "area and crime type" in text
+
+
 class TestGraphEndpoints:
     def test_expansion_reports_what_it_withheld(self, client, tokens):
         offenders = client.get("/api/v1/graph/offenders?limit=1",
@@ -241,6 +464,7 @@ class TestExport:
         response = client.get(payload["url"], headers=auth(tokens, "analyst"))
         assert response.status_code == 200
         assert response.content[:4] == b"%PDF"
+        assert payload["bytes"] == len(response.content)
 
     def test_a_user_cannot_read_another_users_export(self, client, tokens):
         client.post("/api/v1/chat", headers=auth(tokens, "analyst"),

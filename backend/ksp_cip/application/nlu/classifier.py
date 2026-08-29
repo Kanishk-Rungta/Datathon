@@ -36,7 +36,12 @@ INTENT_RULES: list[tuple[Intent, float, list[str]]] = [
         r"\b(similar|like this|comparable|resembl\w+|same (kind|type|pattern) of case|matching cases?)\b",
     ]),
     (Intent.NETWORK_QUERY, 1.0, [
-        r"\b(network|gang|associates?|linked to|connect(ed|ion)s?|co[- ]?accused|ring|how are .+ (and|&) .+ (linked|connected|related))\b",
+        # `networks?` not `network` — a trailing `\b` after "network" fails on
+        # the plural "networks" (no boundary before the s), so "show me criminal
+        # networks" used to fall through to a generic FIR list.
+        r"\b(networks?|gangs?|associates?|linked to|connect(ed|ion)s?|co[- ]?accused|rings?|"
+        r"organi[sz]ed crime|organi[sz]ed group|criminal (group|networks?|associations?)|"
+        r"how are .+ (and|&) .+ (linked|connected|related))\b",
     ]),
     (Intent.FINANCIAL_LINK, 1.0, [
         r"\b(money|financial|transaction|payment|transfer|funds?|account|hawala|cash flow)\b",
@@ -50,6 +55,33 @@ INTENT_RULES: list[tuple[Intent, float, list[str]]] = [
     (Intent.EARLY_WARNING, 1.0, [
         r"\b(early warning|alerts?|anomal\w+|spike|surge|unusual (rise|increase)|emerging)\b",
     ]),
+    # Weighted above both HOTSPOT_QUERY (which describes *observed*
+    # concentration) and FORECAST_QUERY (which projects counts over time).
+    # "Where will crime concentrate next month" is a spatial question about the
+    # future, and answering it with either today's hotspots or a statewide count
+    # would answer a question nobody asked. Every pattern needs a forward-looking
+    # word *and* a spatial one, so "where are the hotspots" stays with HOTSPOT.
+    (Intent.SPATIOTEMPORAL_QUERY, 1.1, [
+        r"\b(?:predicted|projected|forecast(?:ed)?|future|emerging|likely|expected)\s+"
+        r"(?:crime\s+)?(?:hotspots?|hot spots?|clusters?|areas?|locations?|zones?)\b"
+        r"|\bwhere\s+(?:will|would|is|are)\s+(?:crime|theft|cases?|incidents?|it)\s+"
+        r"(?:be\s+)?(?:likely\s+)?(?:to\s+)?(?:concentrate|cluster|rise|increase|happen|occur|spike)\b"
+        r"|\b(?:hotspots?|clusters?)\s+(?:for|in|over)\s+the\s+(?:next|coming)\b"
+        r"|\bwhich\s+(?:areas?|locations?|zones?|grid cells?)\s+.{0,30}?(?:next|coming|future|likely)\b"
+        r"|\bspatio[- ]?temporal\b|\bspatial (?:forecast|projection|risk)\b",
+    ]),
+    # Ahead of both SEASONAL_QUERY and TREND_QUERY: "what will next month look
+    # like" is a question about the future, and answering it with a description
+    # of the past would quietly substitute a different question. Weighted 1.05
+    # so an explicitly forward-looking phrase wins a tie against them.
+    (Intent.FORECAST_QUERY, 1.05, [
+        r"\b(forecast|project(ion|ed)?|predict(ion|ed)?|"
+        r"expect(ed)? (next|in the (coming|next))|"
+        r"how many .{0,60}(next|coming) (month|quarter|year)|"
+        r"(next|coming) (month|quarter|few months).{0,30}(expect|likely|estimate)|"
+        r"what will .{0,40}(look like|happen)|"
+        r"anticipat\w+|plan(ning)? ahead|resource(s)? (for|next))\b",
+    ]),
     # Placed ahead of TREND_QUERY so a tie in match weight resolves toward the
     # more specific calendar-recurrence reading ("festival months", "seasonal
     # pattern") rather than a generic month-over-month trend.
@@ -61,8 +93,27 @@ INTENT_RULES: list[tuple[Intent, float, list[str]]] = [
     (Intent.TREND_QUERY, 1.0, [
         r"\b(trend|over time|month(ly)?|year on year|compared? (to|with) last|rising|falling|increase|decrease|pattern over)\b",
     ]),
+    (Intent.SOCIOECONOMIC_QUERY, 1.05, [
+        # The brief's own wording — "correlation of crime with urbanization,
+        # migration, economic stress, education" — used to miss because the old
+        # pattern required "correlation with <indicator>" *adjacent*, and
+        # listed only some indicators. This matches "correlat*/relat*/link*"
+        # anywhere in the same question as any socio-economic indicator, plus a
+        # bare "socio-economic" trigger.
+        r"\bsocio[- ]?economic\b"
+        r"|\b(correlat\w+|relationship|link\w*|associat\w+|influence|impact|driver)\b"
+        r"[^.?]{0,60}\b(literac\w+|education|unemploy\w+|poverty|income|urbani[sz]\w+|"
+        r"migrat\w+|economic (stress|status|condition)|social (risk|indicator|factor))\b"
+        r"|\b(literac\w+|unemploy\w+|poverty|urbani[sz]\w+|migrat\w+)\b[^.?]{0,60}\b(crime|cases?|offence)\b"
+        r"|\bcrime\b[^.?]{0,60}\b(literac\w+|unemploy\w+|poverty|urbani[sz]\w+|migrat\w+|education)\b",
+    ]),
     (Intent.DEMOGRAPHIC_INSIGHT, 1.0, [
-        r"\b(demograph\w+|age group|occupation|socio[- ]?economic|gender breakdown|who (are|is) (the )?(victims?|complainants?))\b",
+        # Note: no bare "socio-economic" here — that now belongs to
+        # SOCIOECONOMIC_QUERY (indicator correlation), which is weighted above.
+        r"\b(demograph\w+|age group|by (age|gender|occupation|religion|caste)|"
+        r"(age|gender|occupation) breakdown|breakdown by (age|gender|occupation)|"
+        r"(victim|complainant|accused)s?\s+(by|breakdown|demograph|profile|age|gender)|"
+        r"who (are|is) (the )?(victims?|complainants?))\b",
     ]),
     (Intent.LOOKUP_PERSON, 0.9, [
         r"\b(cases? (against|involving)|history of|record of|accused named|person named|what has .+ done)\b",
@@ -95,6 +146,22 @@ _ISO_DATE_RE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
 _LIMIT_RE = re.compile(r"\b(?:top|first|latest|show me)\s+(\d{1,3})\b", re.IGNORECASE)
 _NAMED_RE = re.compile(
     r"(?:named|name|accused|suspect|person|offender|about)\s+([A-Z][\w'.-]+(?:\s+[A-Z][\w'.-]+){0,3})"
+)
+#: Network questions name their subject after a relational cue rather than
+#: after "accused"/"named": "the network around X", "connected to Y",
+#: "links involving Z". Without this the name was never extracted, so the agent
+#: fell back to a community table instead of building the ego graph — and worse,
+#: "around X" was caught by the *place* regex and X resolved to nothing.
+_NETWORK_NAME_RE = re.compile(
+    # Cue words are case-insensitive (they may open the sentence — "Around X",
+    # "How is X…"); the name itself stays capitalised via [A-Z].
+    # Name *after* a relational cue: "network around X", "connected to Y".
+    r"\b(?i:around|involving|connecting|centred on|centered on|links? (?:of|for|around)|"
+    r"connected to|connections? (?:of|to|for)|network (?:of|around|for))\s+"
+    r"([A-Z][\w'.-]+(?:\s+[A-Z][\w'.-]+){0,3})"
+    # Name *before* the cue: "how is X connected/linked/related".
+    r"|\b(?i:how)\s+(?i:is|are|was|were)\s+([A-Z][\w'.-]+(?:\s+[A-Z][\w'.-]+){0,3})\s+"
+    r"(?i:connected|linked|related|associated)"
 )
 _BY_NAME_RE = re.compile(r"\bby\s+([A-Z][\w'.-]+(?:\s+[A-Z][\w'.-]+){1,3})\b")
 _QUOTED_RE = re.compile(r"[\"'\u201c]([^\"'\u201d]{3,60})[\"'\u201d]")
@@ -326,13 +393,25 @@ class NLUEngine:
         names: list[str] = []
         for match in _QUOTED_RE.finditer(text):
             names.append(match.group(1).strip())
-        for match in _NAMED_RE.finditer(text):
-            candidate = match.group(1).strip()
-            if candidate.casefold() in _STOPWORD_NAMES:
-                continue
-            if candidate in slots.district_names or candidate in slots.unit_names:
-                continue
-            names.append(candidate)
+        for pattern in (_NAMED_RE, _NETWORK_NAME_RE):
+            for match in pattern.finditer(text):
+                # _NETWORK_NAME_RE has two alternatives (name after a cue, or
+                # before it), so take whichever group actually captured.
+                raw = next((g for g in match.groups() if g), None)
+                if not raw:
+                    continue
+                candidate = raw.strip()
+                if candidate.casefold() in _STOPWORD_NAMES:
+                    continue
+                if candidate in slots.district_names or candidate in slots.unit_names:
+                    continue
+                # A place is not a person even when named after "about"/"around":
+                # "what about Bengaluru" resolves to a district, so it must not be
+                # extracted as an accused. Exact-match above misses it because the
+                # canonical name is "Bengaluru City"; resolve it properly here.
+                if self._reference.resolve_district(candidate.strip(" .,")):
+                    continue
+                names.append(candidate)
         for match in _BY_NAME_RE.finditer(text):
             candidate = match.group(1).strip()
             if candidate.casefold() in _STOPWORD_NAMES:

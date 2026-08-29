@@ -318,8 +318,12 @@ class CatalystDataStore:
             table, values = _parse_insert(statement)
             return len(self._insert_rows(table, [values]))
         if head in {"UPDATE", "DELETE"}:
-            self._zcql(statement)
-            return 0
+            # ``_zcql`` already extracts whatever rows ZCQL returns for the
+            # statement; for UPDATE/DELETE that is the affected rows, not a
+            # separate count field. Reporting 0 unconditionally (as this used
+            # to) silently misled every caller that logs or acts on a rowcount,
+            # e.g. purge_expired() always claiming nothing was purged.
+            return len(self._zcql(statement))
         raise CIPError(f"Unsupported statement for the Catalyst adapter: {head}", sql=statement[:120])
 
     def _upsert(self, plan: "UpsertPlan") -> int:

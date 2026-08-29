@@ -165,6 +165,54 @@ class TestSchemaCapability:
         assert store.table_columns("not_a_real_table") == []
 
 
+class TestQueryPagination:
+    """query() must not double-LIMIT a statement the caller already bounded.
+
+    ZCQL rejects two LIMIT clauses in one statement. Every repository that
+    builds its own `LIMIT :limit OFFSET :offset` (case search, alerts, the
+    audit log, KV scan, ...) would fail against a live Catalyst project if
+    query() blindly appended its own pagination LIMIT on top.
+    """
+
+    def test_a_caller_supplied_limit_is_not_doubled(self, monkeypatch):
+        from ksp_cip.config import Settings
+        from ksp_cip.infrastructure.catalyst.datastore import CatalystDataStore
+
+        store = CatalystDataStore(Settings(catalyst_project_id="p"), auth=object())
+        seen: list[str] = []
+        monkeypatch.setattr(store, "_zcql", lambda statement: seen.append(statement) or [])
+        store.query("SELECT * FROM t LIMIT :limit OFFSET :offset", {"limit": 25, "offset": 10})
+        assert len(seen) == 1
+        assert seen[0].count("LIMIT") == 1
+
+    def test_an_unbounded_query_is_still_auto_paginated(self, monkeypatch):
+        from ksp_cip.config import Settings
+        from ksp_cip.infrastructure.catalyst.datastore import CatalystDataStore
+        from ksp_cip.infrastructure.catalyst.datastore import ZCQL_PAGE_SIZE
+
+        store = CatalystDataStore(Settings(catalyst_project_id="p"), auth=object())
+        seen: list[str] = []
+
+        def fake_zcql(statement):
+            seen.append(statement)
+            return [{"a": 1}] * ZCQL_PAGE_SIZE if len(seen) == 1 else []
+
+        monkeypatch.setattr(store, "_zcql", fake_zcql)
+        store.query("SELECT * FROM t")
+        assert len(seen) == 2
+        assert "LIMIT 0," in seen[0]
+
+
+class TestExecuteRowcount:
+    def test_update_reports_affected_rows_instead_of_hardcoded_zero(self, monkeypatch):
+        from ksp_cip.config import Settings
+        from ksp_cip.infrastructure.catalyst.datastore import CatalystDataStore
+
+        store = CatalystDataStore(Settings(catalyst_project_id="p"), auth=object())
+        monkeypatch.setattr(store, "_zcql", lambda statement: [{"a": 1}, {"a": 2}])
+        assert store.execute("UPDATE t SET a = 1 WHERE b = :b", {"b": 1}) == 2
+
+
 class TestUnsupportedOperations:
     def test_pragma_is_refused_rather_than_approximated(self, monkeypatch):
         from ksp_cip.config import Settings

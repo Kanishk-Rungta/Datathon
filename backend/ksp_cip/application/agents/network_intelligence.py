@@ -15,16 +15,26 @@ Three disciplines are enforced here rather than left to prompt wording:
 
 from __future__ import annotations
 
-from typing import Any
+from collections import defaultdict
+from typing import Any, Sequence
 
 from ...domain.enums import AgentName, EdgeType, Intent, Permission, Provenance
-from ...domain.models import AgentResult, StructuredPayload
+from ...domain.models import AgentResult, StructuredPayload, UnitScope
 from ...infrastructure.db.repositories import (
     CaseRepository,
     FinancialRepository,
     IdentityRepository,
 )
 from ..graph import FinancialAnalyzer, GraphService, person_node
+from ..graph.financial import (
+    BURST_BASELINE_DAYS,
+    BURST_Z_THRESHOLD,
+    CHAIN_WINDOW_DAYS,
+    CONCENTRATION_PERCENTILE,
+    MIN_ACCOUNTS_FOR_CONCENTRATION,
+    STRUCTURING_THRESHOLD,
+    rows_are_extension,
+)
 from ..services.audit import AuditService, audited
 from ..services.authorization import AuthorizationService
 from ..services.evidence import (
@@ -181,9 +191,24 @@ class NetworkIntelligenceAgent(BaseAgent):
             ))
 
         if expansion.trimmed_by_scope:
+            # This states a computed number, so it needs a locator like any
+            # other numeric claim — otherwise the composer suppresses the whole
+            # answer (EvidenceMissingError). The withheld links themselves are
+            # deliberately not disclosed: naming them would defeat the scope
+            # trim this claim is reporting, so the evidence carries the count
+            # and the basis, not the records.
+            trimmed_item = aggregate_evidence(
+                key=f"graph_scope_trim:{seed}:{hops}",
+                label=f"{expansion.trimmed_by_scope} link(s) outside the caller's unit scope",
+                case_master_ids=[],
+                detail={"withheld_by_scope": expansion.trimmed_by_scope, "hops": hops,
+                        "basis": "links traversing police stations outside the authorized unit subtree"},
+            )
+            evidence_items.append(trimmed_item)
             claims.append(claim(
                 f"{expansion.trimmed_by_scope} link(s) were withheld because they run through police stations "
-                "outside your authorized scope."
+                "outside your authorized scope.",
+                [trimmed_item], provenance=Provenance.DETERMINISTIC_COMPUTATION,
             ))
         claims.append(claim(
             "Links are derived from shared FIR records, not from any confirmed association. Co-accused in one "
@@ -338,6 +363,23 @@ class NetworkIntelligenceAgent(BaseAgent):
             "Clusters are computed from shared FIR records by a modularity algorithm. They indicate where to "
             "look, not who is organised."
         ))
+
+        # Render the clusters as a graph the console can draw — the network
+        # visualization the brief asks for — falling back to a table only if the
+        # subgraph came back empty (e.g. everything trimmed by scope).
+        view = self._graph.communities_view(communities, request.scope)
+        if view.nodes:
+            payload = self._graph_payload("Criminal networks — top clusters", view, seed="")
+        else:
+            payload = StructuredPayload(
+                payload_type="table", title="Person clusters",
+                data={
+                    "columns": ["Cluster", "Members", "Most connected"],
+                    "rows": [[str(c["community_id"]), str(c["size"]), c["most_central_label"]]
+                             for c in communities],
+                },
+            )
+
         return AgentResult(
             agent=self.name, intent=request.intent, summary_claims=claims, evidence=evidence_items,
             traces=[trace(
@@ -346,14 +388,7 @@ class NetworkIntelligenceAgent(BaseAgent):
                 "optimisation with a fixed seed, then ranked members by degree centrality.",
                 inputs={"clusters": len(communities)}, row_count=len(communities),
             )],
-            payload=StructuredPayload(
-                payload_type="table", title="Person clusters",
-                data={
-                    "columns": ["Cluster", "Members", "Most connected"],
-                    "rows": [[str(c["community_id"]), str(c["size"]), c["most_central_label"]]
-                             for c in communities],
-                },
-            ),
+            payload=payload,
             data={"communities": [c["community_id"] for c in communities]},
         )
 
@@ -412,7 +447,7 @@ class NetworkIntelligenceAgent(BaseAgent):
                 f"{len(records)} person(s) in your scope are named as accused in more than one FIR.",
                 provenance=Provenance.DETERMINISTIC_COMPUTATION,
             ))
-        for record in records[:8]:
+        for record in records:
             identity = self._identities.identity(str(record["identity_id"])) or {}
             item = person_evidence(
                 identity_id=str(record["identity_id"]),
@@ -476,10 +511,171 @@ class NetworkIntelligenceAgent(BaseAgent):
                 ),
             ),
             data={"identity_ids": [r["identity_id"] for r in records],
+                  # Publish the names so the supervisor can pin them for anaphora.
+                  # Without this, "how is *he* connected?" after an offender list
+                  # found no person referent and fell through to the case branch,
+                  # answering with an out-of-scope FIR error instead.
+                  "person_names": [str(r["canonical_name"]) for r in records][:10],
                   "case_master_ids": [int(c) for r in records for c in r.get("case_ids", [])][:200]},
         )
 
     # --------------------------------------------------------- financial
+    def _money_meets_crime(
+        self, identity: dict[str, Any] | None, transactions: Sequence[dict[str, Any]], scope: UnitScope,
+    ) -> list[dict[str, Any]]:
+        """Counterparties who are *also* linked to the subject in the crime graph.
+
+        Two records pointing at the same pair of people — one a transfer, one a
+        shared FIR — is a stronger prompt than either alone, and it is the join
+        the two datasets exist to support.
+
+        Every result here is marked inferred. The person node on the money side
+        is reached through entity resolution, so the correlation inherits that
+        resolution's uncertainty: if the identity was assembled from an
+        auto-linked pair, so was this.
+        """
+        if identity is None:
+            return []
+        seed = person_node(str(identity["identity_id"]))
+        expansion = self._graph.expand(seed, scope, hops=1)
+
+        # Everything the crime graph says about this person, money aside.
+        crime_links: dict[str, set[str]] = defaultdict(set)
+        for link in expansion.view.links:
+            if str(link.edge_type) == str(EdgeType.MONEY_FLOW):
+                continue
+            for node in (link.source, link.target):
+                if node != seed and node.startswith("person:"):
+                    crime_links[node].add(str(link.edge_type))
+
+        if not crime_links:
+            return []
+
+        own_refs = {str(a) for a in identity.get("source_ids", [])}
+        joins: dict[str, dict[str, Any]] = {}
+        for txn in transactions:
+            for ref_key, label_key, kind_key in (
+                ("from_ref", "from_label", "from_kind"), ("to_ref", "to_label", "to_kind"),
+            ):
+                ref = str(txn[ref_key])
+                if ref in own_refs or str(txn[kind_key]) != "accused":
+                    continue
+                try:
+                    counterpart = self._identities.identity_for_accused(int(ref))
+                except (TypeError, ValueError):
+                    continue
+                if counterpart is None:
+                    continue
+                node = person_node(str(counterpart["identity_id"]))
+                if node not in crime_links:
+                    continue
+                entry = joins.setdefault(node, {
+                    "label": str(txn[label_key]),
+                    "identity_id": str(counterpart["identity_id"]),
+                    "crime_edge_types": sorted(crime_links[node]),
+                    "txn_ids": [],
+                    "amount": 0.0,
+                })
+                entry["txn_ids"].append(str(txn["txn_id"]))
+                entry["amount"] = round(entry["amount"] + float(txn["amount"]), 2)
+
+        results = sorted(joins.values(), key=lambda j: len(j["txn_ids"]), reverse=True)
+        return results[:5]
+
+    def _financial_overview(self, request: AgentRequest) -> AgentResult:
+        """Suspicious shapes across the whole synthetic transaction extension.
+
+        The entry point when no person or FIR was named. It surfaces the same
+        structural observations the per-subject view uses — concentration
+        (fan-in/out), onward hop chains, per-account bursts — but ranked across
+        everything, so an investigator with no lead yet gets a starting list.
+        Every statement stays an arithmetic observation about recorded amounts,
+        never a finding of wrongdoing (ADR-0005).
+        """
+        transactions = self._financial.all_transactions()
+        if not transactions:
+            return AgentResult(
+                agent=self.name, intent=request.intent,
+                summary_claims=[claim(
+                    "No transactions are recorded in the financial extension. The FIR schema itself "
+                    "holds no financial data.",
+                    provenance=Provenance.SYNTHETIC_EXTENSION,
+                )],
+                warnings=["Financial data is a synthetic extension, not source FIR data."],
+            )
+
+        concentrations = self._analyzer.concentration(transactions)
+        chains = self._analyzer.hop_chains(transactions)
+        bursts = self._analyzer.temporal_bursts(transactions)
+
+        evidence_items = [transaction_evidence(
+            txn_id=str(transactions[0]["txn_id"]),
+            label=f"{len(transactions)} transaction(s) across the synthetic financial extension",
+            case_master_ids=sorted({int(t["case_master_id"]) for t in transactions if t.get("case_master_id")})[:200],
+            detail={"transactions": len(transactions),
+                    "is_extension": rows_are_extension(transactions)},
+        )]
+
+        claims = [claim(
+            f"{len(transactions)} transaction(s) are recorded in the extension. The most notable "
+            "structural patterns across all of them are below — arithmetic observations, not "
+            "findings of wrongdoing.",
+            evidence_items, provenance=Provenance.SYNTHETIC_EXTENSION,
+        )]
+        for spot in concentrations[:3]:
+            direction = "collected from" if spot.direction == "fan-in" else "paid out to"
+            claims.append(claim(
+                f"{spot.label} ({spot.kind}) {direction} {spot.counterparty_count} distinct "
+                f"counterparties totalling ₹{spot.total_amount:,.0f} — above the "
+                f"{spot.percentile:.0f}th percentile for this dataset. A position in the recorded "
+                "transfers, not a statement about any person.",
+                evidence_items, provenance=Provenance.SYNTHETIC_EXTENSION,
+            ))
+        for chain in chains[:2]:
+            claims.append(claim(
+                f"Money moved onward through {chain.hops} transfer(s) between {chain.start_date} and "
+                f"{chain.end_date}: {' → '.join(chain.path)}. Onward movement is a shape in the "
+                "records, not evidence of intent to obscure.",
+                evidence_items, provenance=Provenance.SYNTHETIC_EXTENSION,
+            ))
+        for b in bursts[:2]:
+            claims.append(claim(
+                f"{b.label} recorded {b.txn_count} transfer(s) on {b.day}, against a "
+                f"{b.baseline_days}-day average of {b.baseline_mean:.2f}/day (z = {b.z_score:.1f}). "
+                "A prompt to look, not a conclusion.",
+                evidence_items, provenance=Provenance.SYNTHETIC_EXTENSION,
+            ))
+        claims.append(claim(
+            "Ask about a named accused or an FIR to trace one subject's money trail in full. These "
+            "figures come from a clearly marked synthetic extension, not real banking data."
+        ))
+
+        return AgentResult(
+            agent=self.name, intent=request.intent, summary_claims=claims, evidence=evidence_items,
+            traces=[trace(
+                "financial_overview",
+                "Ranked concentration, onward hop chains and per-account bursts across every "
+                "ext_financial_transaction row. Synthetic extension, not source FIR data.",
+                inputs={"transactions": len(transactions),
+                        "concentrations": len(concentrations), "chains": len(chains),
+                        "bursts": len(bursts)},
+                row_count=len(transactions),
+            )],
+            payload=StructuredPayload(
+                payload_type="table",
+                title="Suspicious transfer patterns — all accounts (synthetic extension)",
+                data={
+                    "columns": ["Account", "Direction", "Counterparties", "Total"],
+                    "rows": [
+                        [c.label, c.direction, str(c.counterparty_count), f"{c.total_amount:,.0f}"]
+                        for c in concentrations[:10]
+                    ],
+                    "is_extension": rows_are_extension(transactions),
+                },
+            ),
+            warnings=["Financial data is a synthetic extension, not source FIR data."],
+        )
+
     def _financial_links(self, request: AgentRequest) -> AgentResult:
         request.principal.require(Permission.USE_FINANCIAL_TOOLS)
         names = request.slots.person_names or request.pinned_person_names
@@ -491,12 +687,18 @@ class NetworkIntelligenceAgent(BaseAgent):
 
         transactions: list[dict[str, Any]] = []
         subject_ref = subject_label = ""
+        subject_refs: list[str] = []
+        subject_identity: dict[str, Any] | None = None
         if names:
             identity = self._resolve_identity(names[0])
             if identity is None:
                 return self.empty_result(request, f"'{names[0]}' is not present in the indexed accused records.")
+            subject_identity = identity
             refs = [str(a) for a in identity.get("source_ids", [])]
             transactions = self._financial.for_refs(refs)
+            # Every row this identity resolves to, so a transfer recorded
+            # against any of them counts toward the person's totals.
+            subject_refs = refs
             subject_ref = refs[0] if refs else ""
             subject_label = str(identity["canonical_name"])
         elif case_ids:
@@ -504,11 +706,12 @@ class NetworkIntelligenceAgent(BaseAgent):
             transactions = self._financial.for_cases(allowed)
             subject_label = f"FIR case id(s) {allowed}"
             subject_ref = str(transactions[0]["from_ref"]) if transactions else ""
+            subject_refs = [subject_ref] if subject_ref else []
         else:
-            return self.empty_result(
-                request, "I need a person or an FIR to trace financial links for.",
-                clarification="Whose transactions should I trace — a named accused, or a specific FIR?",
-            )
+            # No subject named — a generic "trace money transfers" should show
+            # the suspicious *shapes* across the whole synthetic extension, not
+            # ask the officer to already know whom to look at.
+            return self._financial_overview(request)
 
         if not transactions:
             return AgentResult(
@@ -526,8 +729,13 @@ class NetworkIntelligenceAgent(BaseAgent):
                 warnings=["Financial data is a synthetic extension, not source FIR data."],
             )
 
+        # Structural analyses need the neighbourhood; totals stay the subject's own.
+        network_transactions = self._financial.neighbourhood(
+            sorted({str(t["from_ref"]) for t in transactions} | {str(t["to_ref"]) for t in transactions})
+        )
         summary = self._analyzer.summarize(
-            subject_ref=subject_ref, subject_label=subject_label, transactions=transactions
+            subject_ref=subject_ref, subject_label=subject_label, transactions=transactions,
+            network_transactions=network_transactions, subject_refs=subject_refs,
         )
         evidence_items = [
             transaction_evidence(
@@ -535,7 +743,7 @@ class NetworkIntelligenceAgent(BaseAgent):
                 label=f"{len(transactions)} transaction(s) recorded against {subject_label}",
                 case_master_ids=summary.case_ids,
                 detail={"txn_ids": [str(t["txn_id"]) for t in transactions[:50]],
-                        "is_extension": True},
+                        "is_extension": summary.is_extension},
             )
         ]
         claims = [
@@ -556,6 +764,70 @@ class NetworkIntelligenceAgent(BaseAgent):
                 f"{pattern['pattern'].capitalize()} — {pattern['observation']}. {pattern['caveat']}",
                 evidence_items, provenance=Provenance.SYNTHETIC_EXTENSION,
             ))
+
+        for chain in summary.chains[:2]:
+            claims.append(claim(
+                f"Money moved onward through {chain.hops} transfer(s) between {chain.start_date} and "
+                f"{chain.end_date}: {' → '.join(chain.path)}. "
+                f"₹{chain.amounts[0]:,.0f} at the first hop, ₹{chain.amounts[-1]:,.0f} at the last. "
+                "Onward movement is a shape in the recorded transfers; it is not itself evidence of "
+                "an attempt to obscure the origin.",
+                evidence_items, provenance=Provenance.SYNTHETIC_EXTENSION,
+            ))
+
+        for spot in summary.concentrations[:2]:
+            direction = "collected from" if spot.direction == "fan-in" else "paid out to"
+            claims.append(claim(
+                f"{spot.label} ({spot.kind}) {direction} {spot.counterparty_count} distinct counterparties "
+                f"across {spot.txn_count} transfer(s) totalling ₹{spot.total_amount:,.0f} — at or above the "
+                f"{spot.percentile:.0f}th percentile of this dataset, which is "
+                f"{spot.threshold_degree:.0f} counterparties. This describes the account's position in the "
+                "recorded transfers, not the conduct of any person.",
+                evidence_items, provenance=Provenance.SYNTHETIC_EXTENSION,
+            ))
+
+        for burst in summary.bursts[:2]:
+            claims.append(claim(
+                f"{burst.label} recorded {burst.txn_count} transfer(s) on {burst.day}, against a "
+                f"{burst.baseline_days}-day average of {burst.baseline_mean:.2f} per day for that same "
+                f"account (z = {burst.z_score:.1f}). A single busy day has many ordinary explanations; "
+                "this is a prompt to look, not a conclusion.",
+                evidence_items, provenance=Provenance.SYNTHETIC_EXTENSION,
+            ))
+
+        for position in summary.positions[:2]:
+            if position.betweenness <= 0:
+                continue
+            claims.append(claim(
+                f"{position.label} sits between other parties on {position.betweenness:.3f} of the shortest "
+                f"routes through the recorded transfers, with {position.degree} direct counterparties. "
+                "This is a structural position in the money-flow graph, not a statement about culpability.",
+                evidence_items, provenance=Provenance.SYNTHETIC_EXTENSION,
+            ))
+
+        bands = [b for b in summary.amount_bands if b.count]
+        if bands:
+            breakdown = "; ".join(f"{b.label}: {b.count}" for b in bands)
+            claims.append(claim(
+                f"Across {len(transactions)} transfer(s) the amounts fall as — {breakdown}. "
+                "The distribution is given in full so a cluster near the threshold can be read in context.",
+                evidence_items, provenance=Provenance.SYNTHETIC_EXTENSION,
+            ))
+
+        joins = self._money_meets_crime(subject_identity, transactions, request.scope)
+        for join in joins:
+            phrasing = ", ".join(
+                EDGE_PHRASING.get(edge_type, edge_type.lower().replace("_", " "))
+                for edge_type in join["crime_edge_types"]
+            )
+            claims.append(claim(
+                f"{join['label']} appears on both sides of the record: {len(join['txn_ids'])} transfer(s) "
+                f"totalling ₹{join['amount']:,.0f} with {subject_label}, and a link in the case graph "
+                f"({phrasing}). The person on the money side is matched through entity resolution, so this "
+                "correlation carries that matching's uncertainty.",
+                evidence_items, provenance=Provenance.INFERRED,
+            ))
+
         claims.append(claim(
             "These transactions come from a clearly marked synthetic extension table. The organiser's FIR "
             "schema contains no financial records, so nothing here reflects real banking data."
@@ -565,10 +837,26 @@ class NetworkIntelligenceAgent(BaseAgent):
             agent=self.name, intent=request.intent, summary_claims=claims, evidence=evidence_items,
             traces=[trace(
                 "financial_analysis",
-                "Aggregated ext_financial_transaction rows by counterparty and ran two threshold observations "
-                "over the amounts. This table is a synthetic extension, not source FIR data.",
-                inputs={"subject": subject_label, "transactions": len(transactions)},
-                formula="net = Σ received − Σ sent per counterparty",
+                "Aggregated ext_financial_transaction rows by counterparty, then ran six deterministic "
+                "observations over them: near-threshold amounts, same-day volume, onward hop chains, "
+                "counterparty concentration, per-account daily bursts, and money-flow network position. "
+                "This table is a synthetic extension, not source FIR data.",
+                inputs={
+                    "subject": subject_label,
+                    "transactions": len(transactions),
+                    "chain_window_days": CHAIN_WINDOW_DAYS,
+                    "concentration_percentile": CONCENTRATION_PERCENTILE,
+                    "min_accounts_for_concentration": MIN_ACCOUNTS_FOR_CONCENTRATION,
+                    "burst_baseline_days": BURST_BASELINE_DAYS,
+                    "burst_z_threshold": BURST_Z_THRESHOLD,
+                    "reporting_threshold_inr": STRUCTURING_THRESHOLD,
+                },
+                formula=(
+                    "net = Σ received − Σ sent per counterparty; "
+                    "concentration cutoff = nearest-rank p90 of the observed degree distribution; "
+                    "burst z = (day count − mean(prior 30 calendar days)) / max(stddev, 1.0); "
+                    "betweenness = fraction of shortest paths through the node"
+                ),
                 row_count=len(transactions),
             )],
             payload=StructuredPayload(
@@ -579,7 +867,7 @@ class NetworkIntelligenceAgent(BaseAgent):
                         [f.label, f.kind, str(f.txn_count), f"{f.received:,.0f}", f"{f.sent:,.0f}", f"{f.net:,.0f}"]
                         for f in summary.counterparties
                     ],
-                    "is_extension": True,
+                    "is_extension": summary.is_extension,
                 },
             ),
             warnings=["Financial data is a synthetic extension, not source FIR data."],
