@@ -87,10 +87,25 @@ class StratusFileStore:
             return False
 
     def list_keys(self, prefix: str) -> list[str]:
-        query = urllib_parse.urlencode({"prefix": validate_key(prefix)})
-        raw = self._call("GET", f"?{query}", None, None, raw_path=True)
-        payload: dict[str, Any] = json.loads(raw.decode("utf-8"))
-        return [str(item.get("key")) for item in payload.get("data", []) if item.get("key")]
+        """Refused: Stratus exposes no documented list-objects REST endpoint.
+
+        This used to GET the bucket origin with a ``?prefix=`` query, which the
+        live bucket answers with a bare ``405 Method Not Allowed`` — accurate
+        but uninformative, and indistinguishable from a transient fault. The
+        baas-hosted shapes (``/stratus/bucket/<b>/object`` and neighbours) all
+        answer ``INVALID_URL_PATTERN``, and Zoho documents object listing only
+        through the SDKs, not REST.
+
+        Failing loudly here follows the same rule as ``PRAGMA`` on the Data
+        Store: refuse an operation this backend cannot honestly perform rather
+        than approximate it. Nothing in the application calls this — reads are
+        by exact key — so the port keeps its shape without pretending.
+        """
+        raise ProviderError(
+            "Stratus has no documented list-objects REST endpoint; "
+            "objects are addressed by exact key on this backend.",
+            provider="stratus", prefix=validate_key(prefix),
+        )
 
     def url_for(self, key: str) -> str:
         return f"/api/v1/files/{validate_key(key)}"

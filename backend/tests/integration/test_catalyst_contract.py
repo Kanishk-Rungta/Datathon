@@ -97,12 +97,12 @@ class TestUpsertTranslation:
 
     def test_do_update_resolves_excluded_references(self):
         plan = _parse_upsert(
-            "INSERT INTO cip_kv (namespace, key, value_json) VALUES ('s', 'k', '{}')"
-            " ON CONFLICT (namespace, key) DO UPDATE SET value_json = excluded.value_json"
+            "INSERT INTO cip_kv (namespace, kv_key, value_json) VALUES ('s', 'k', '{}')"
+            " ON CONFLICT (namespace, kv_key) DO UPDATE SET value_json = excluded.value_json"
         )
         assert plan is not None
         assert plan.table == "cip_kv"
-        assert plan.conflict_columns == ["namespace", "key"]
+        assert plan.conflict_columns == ["namespace", "kv_key"]
         assert plan.resolved_updates() == {"value_json": "{}"}
 
     def test_do_nothing_yields_an_empty_update_set(self):

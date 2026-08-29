@@ -82,9 +82,9 @@ class TestUpsertAgainstLiveZCQL:
         namespace = "agent_scratchpad"
         key = f"smoke-{uuid.uuid4().hex[:12]}"
         statement = (
-            "INSERT INTO cip_kv (namespace, key, value_json, expires_at, updated_at)"
+            "INSERT INTO cip_kv (namespace, kv_key, value_json, expires_at, updated_at)"
             " VALUES (:ns, :k, :v, :e, :u)"
-            " ON CONFLICT (namespace, key) DO UPDATE SET value_json = excluded.value_json"
+            " ON CONFLICT (namespace, kv_key) DO UPDATE SET value_json = excluded.value_json"
         )
         try:
             live_store.execute(statement, {"ns": namespace, "k": key, "v": '{"n":1}',
@@ -92,20 +92,21 @@ class TestUpsertAgainstLiveZCQL:
             live_store.execute(statement, {"ns": namespace, "k": key, "v": '{"n":2}',
                                            "e": None, "u": "2026-01-01T00:00:00+00:00"})
             rows = live_store.query(
-                "SELECT value_json FROM cip_kv WHERE namespace = :ns AND key = :k",
+                "SELECT value_json FROM cip_kv WHERE namespace = :ns AND kv_key = :k",
                 {"ns": namespace, "k": key},
             )
             assert len(rows) == 1, "the upsert duplicated instead of updating"
             assert '"n":2' in rows[0]["value_json"].replace(" ", "")
         finally:
             live_store.execute(
-                "DELETE FROM cip_kv WHERE namespace = :ns AND key = :k",
+                "DELETE FROM cip_kv WHERE namespace = :ns AND kv_key = :k",
                 {"ns": namespace, "k": key},
             )
 
 
 class TestStratusRoundTrip:
-    def test_an_object_writes_reads_and_lists(self, live_settings):
+    def test_an_object_writes_and_reads_back(self, live_settings):
+        """Write and read by exact key — the only path the application uses."""
         from ksp_cip.infrastructure.catalyst.stratus import StratusFileStore
 
         store = StratusFileStore(live_settings)
@@ -115,7 +116,20 @@ class TestStratusRoundTrip:
         store.write_bytes(key, payload, "text/plain")
         assert store.read_bytes(key) == payload
         assert store.exists(key)
-        assert any(listed.endswith(key.split("/")[-1]) for listed in store.list_keys("smoke/"))
+
+    def test_listing_is_refused_with_a_reason(self, live_settings):
+        """Stratus publishes no list-objects REST endpoint.
+
+        The bucket origin answers a prefixed GET with a bare 405 and every
+        baas-hosted shape with INVALID_URL_PATTERN, so the adapter refuses
+        rather than surfacing a transport error the caller cannot act on.
+        """
+        from ksp_cip.domain.errors import ProviderError
+        from ksp_cip.infrastructure.catalyst.stratus import StratusFileStore
+
+        store = StratusFileStore(live_settings)
+        with pytest.raises(ProviderError, match="no documented list-objects"):
+            store.list_keys("smoke/")
 
     def test_export_urls_are_not_public_object_links(self, live_settings):
         """``url_for`` must route through the authorising application path."""

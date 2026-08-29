@@ -3,7 +3,7 @@
     "backend/ksp_cip/infrastructure/db/schema.sql",
     "migrations.py"
   ],
-  "table_count": 48,
+  "table_count": 49,
   "tables": [
     {
       "table": "audit_event",
@@ -1419,6 +1419,32 @@
         },
         {
           "name": "updated_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
+      "table": "ctl_schema_version",
+      "columns": [
+        {
+          "name": "version",
+          "type": "INTEGER",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "description",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "applied_at",
           "type": "TEXT",
           "primary_key": false,
           "not_null": true,

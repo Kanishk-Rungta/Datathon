@@ -31,6 +31,19 @@ CREATE TABLE IF NOT EXISTS raw_record (
 CREATE INDEX IF NOT EXISTS ix_raw_record_table ON raw_record (source_table, source_pk);
 CREATE INDEX IF NOT EXISTS ix_raw_record_batch ON raw_record (_batch_id);
 
+-- Schema version ledger. Declared here, not only in migrations.py, so it
+-- reaches the provisioning manifest like every other table: it is created
+-- imperatively by migrations._ensure_version_table() for SQLite (which must
+-- run before this file is applied), but a backend with no executescript --
+-- Catalyst -- could never obtain it that way, so the version check it exists
+-- to support was impossible there. Both paths use CREATE TABLE IF NOT EXISTS,
+-- so declaring it twice is a no-op rather than a conflict.
+CREATE TABLE IF NOT EXISTS ctl_schema_version (
+    version           INTEGER PRIMARY KEY,
+    description       TEXT NOT NULL,
+    applied_at        TEXT NOT NULL
+);
+
 -- Hash ledger enabling the architecture's hash-diff CDC strategy (§5.4).
 CREATE TABLE IF NOT EXISTS ctl_row_hash (
     source_table      TEXT NOT NULL,
