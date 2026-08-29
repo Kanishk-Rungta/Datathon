@@ -184,7 +184,15 @@ class TestSeasonalAnalysis:
 
     def test_seasonal_query_disclaims_forecasting(self, container, analyst):
         """It compares history, and must say so plainly rather than imply a
-        prediction of what a future occurrence of that month will look like."""
+        prediction of what a future occurrence of that month will look like.
+
+        This must hold on *both* branches. The seed window is relative to
+        today, so which branch fires — enough prior years, or an honest
+        "not enough history" — shifts with the calendar: this test passed on
+        2026-08-28 and failed on 2026-08-29, because the insufficient-history
+        path returned early and skipped the disclaimer. An assurance about
+        forecasting must not depend on the date the suite happens to run.
+        """
         answer = ask(container, analyst, "What is the seasonal trend for theft?")
         assert answer.intent is Intent.SEASONAL_QUERY
         assert "not a forecast" in answer.answer_text.lower()

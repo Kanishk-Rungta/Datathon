@@ -580,11 +580,24 @@ class CrimeAnalyticsAgent(BaseAgent):
             )
             return AgentResult(
                 agent=self.name, intent=request.intent,
-                summary_claims=[claim(
-                    f"The available history ({start} to {end}) does not yet cover enough separate years for any "
-                    "calendar month to have a reliable seasonal baseline, so no seasonal finding is reported.",
-                    [nothing], provenance=Provenance.DETERMINISTIC_COMPUTATION,
-                )],
+                summary_claims=[
+                    claim(
+                        f"The available history ({start} to {end}) does not yet cover enough separate years for any "
+                        "calendar month to have a reliable seasonal baseline, so no seasonal finding is reported.",
+                        [nothing], provenance=Provenance.DETERMINISTIC_COMPUTATION,
+                    ),
+                    # The framing disclaimer belongs on this path too. A thin-history
+                    # answer is still an answer about seasonality, and must not be read
+                    # as a prediction just because it reported no figure. Omitting it
+                    # here also made the disclaimer's presence depend on today's date
+                    # relative to the seed window, which is not a property an assurance
+                    # about forecasting should have.
+                    claim(
+                        "Seasonal analysis compares recorded FIR counts for a calendar month against that same "
+                        "month in prior years. It is a historical comparison, not a forecast of what will happen "
+                        "next time that month occurs."
+                    ),
+                ],
                 evidence=[nothing], traces=[result.trace], confidence=0.85,
             )
 
