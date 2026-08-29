@@ -190,6 +190,42 @@ class TestSeasonalAnalysis:
         assert "not a forecast" in answer.answer_text.lower()
 
 
+class TestForecastScope:
+    """An aggregate forecast must survive a conversation that mentioned a person.
+
+    The refusal gate on ``_forecast`` used to read ``pinned_person_names`` as
+    well as the current turn's slots. A pin lasts the whole session, so once
+    an officer had asked about repeat offenders, every later planning question
+    in that conversation -- "forecast crime for the next three months", which
+    names nobody -- came back as "this platform does not forecast whether a
+    particular person will offend". Refusing the prohibited question is the
+    point; refusing the permitted one because of an earlier turn is a defect.
+    """
+
+    def test_an_aggregate_forecast_after_a_person_turn_still_forecasts(self, container, analyst):
+        session = "forecast-after-person"
+        offenders = ask(container, analyst, "Who are the repeat offenders?", session)
+        assert offenders.intent is Intent.OFFENDER_PROFILE
+
+        answer = ask(container, analyst, "Forecast crime for the next three months", session)
+        assert answer.intent is Intent.FORECAST_QUERY
+        assert "does not forecast whether a particular person" not in answer.answer_text
+        assert answer.payload.payload_type == "forecast"
+
+    def test_a_person_follow_up_in_the_same_session_is_still_refused(self, container, analyst):
+        """The legitimate refusal path: the pronoun resolves to the pinned name
+        through MemoryService, so it lands in the current turn's slots."""
+        session = "forecast-person-followup"
+        ask(container, analyst, "Who are the repeat offenders?", session)
+        answer = ask(container, analyst, "Will he reoffend next year?", session)
+        assert "does not forecast whether a particular person" in answer.answer_text
+
+    def test_a_named_individual_forecast_is_refused_outright(self, container, analyst):
+        answer = ask(container, analyst, "Predict who will commit a crime next month",
+                     "forecast-named")
+        assert "does not forecast whether a particular person" in answer.answer_text
+
+
 class TestSociologySubjectSelector:
     def test_victim_subject_with_unsupported_dimension_is_substituted_not_dropped(self, container, analyst):
         """The organiser's Victim table has no occupation column. The agent

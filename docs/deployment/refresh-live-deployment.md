@@ -33,10 +33,12 @@ fixed by re-seeding.
 From a machine with the Catalyst CLI authenticated to the Development project:
 
 ```bash
-cd ksp-cip
-# console is already built into frontend/dist by this branch; rebuild only if
-# you changed frontend source since:
-#   (cd frontend && npm ci && npm run build)
+# Build the console, then stage all three deployment artifacts. As of
+# 29 Aug 2026 this step is REQUIRED, not optional: Catalyst ships only the
+# directory named by a component's source, and none of the three entrypoints
+# is self-contained in the checkout -- the API lacks the ksp_cip package and
+# the console lacks frontend/dist. Deploy from dist/, not catalyst/.
+python cip.py package   # -> dist/cip-api, dist/cip-refresh, dist/cip-console
 
 catalyst deploy            # or the project's usual appsail deploy command
 ```
@@ -73,7 +75,7 @@ whatever `DataStore` is selected, so pointing it at Catalyst re-seeds the live
 Data Store. Run it with the Development project's credentials set:
 
 ```bash
-cd ksp-cip/backend
+cd backend      # from the repository root
 
 export KSPCIP_ENVIRONMENT=development
 export KSPCIP_DATASTORE_BACKEND=catalyst
@@ -102,6 +104,19 @@ curl -s $B/health | python3 -c 'import sys,json;print("cases:",json.load(sys.std
 > **The seed is idempotent on a deterministic key but `--reset` deletes the
 > current rows first.** It is safe here because all data is synthetic. Never
 > run this against a Production project.
+
+> **`--reset` against Catalyst is the least-tested path in this procedure.**
+> Two things were wrong with it as of 29 Aug 2026 and are now fixed:
+> `curated_ComplainantDetails` was missing from the truncation list (so every
+> reset failed on a foreign key, locally and remotely), and the statement
+> quoted the table identifier — the only `DELETE` in the codebase that did,
+> and ZCQL has no quoted identifiers. What is **still unverified** is whether
+> ZCQL accepts an unqualified `DELETE FROM <table>` at all. The nightly
+> intelligence refresh already depends on that shape
+> (`DELETE FROM cip_graph_edge` and friends in `repositories/intel.py`), so it
+> is not a new risk introduced by re-seeding — but neither has been run
+> against a live project. If a reset fails there, delete the tables through
+> the Catalyst console and re-run the seed **without** `--reset`.
 
 ---
 

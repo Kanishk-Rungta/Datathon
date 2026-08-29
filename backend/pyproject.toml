@@ -13,6 +13,13 @@ dependencies = [
   "networkx>=3.2",
   "reportlab>=4.1",
   "jinja2>=3.1",
+  # Runtime, not dev-only: the hosted LLM providers and the Bhashini language
+  # adapter import httpx lazily. Leaving it a dev extra meant selecting
+  # KSPCIP_LLM_PROVIDER=anthropic (or LANGUAGE_PROVIDER=bhashini) started
+  # cleanly and then raised ModuleNotFoundError on the first real call, in a
+  # deployment, with no startup warning. Every other outbound adapter
+  # (Catalyst Data Store/Stratus/Cache, AI4Bharat) uses stdlib urllib.
+  "httpx>=0.27",
 ]
 
 [project.optional-dependencies]

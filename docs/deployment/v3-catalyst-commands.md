@@ -109,12 +109,23 @@ catalyst project:list                             # confirm project access
 catalyst project:use <project_id>                 # bind this directory to it
 catalyst init --project <project_id>               # initialize local project links
 
+# --source is the STAGED artifact, not the source directory. Catalyst ships
+# only the directory it is given, and none of the three entrypoints is
+# self-contained in the checkout. Build them first (29 Aug 2026 correction):
+#
+#   cd frontend && npm install && npm run build && cd ..
+#   python scripts/build_catalyst_artifact.py --target api
+#   python scripts/build_catalyst_artifact.py --target refresh
+#   python scripts/build_catalyst_artifact.py --target console
+#
+# catalyst.json records deploy_source and build per component.
+
 catalyst appsail:add --name cip-api --stack python_3_11 \
-  --source catalyst/appsail/api --command "python3 -u server.py" --port 9000
+  --source dist/cip-api --command "python3 -u server.py" --port 9000
 catalyst appsail:add --name cip-console --stack node18 \
-  --source catalyst/appsail/console --command "node server.js" --port 9000
+  --source dist/cip-console --command "node server.js" --port 9000
 catalyst functions:add --type event --stack python_3_11 --name cip_refresh
-  # then point its source at catalyst/functions/cip_refresh per catalyst.json
+  # then point its source at dist/cip-refresh per catalyst.json
 
 catalyst deploy --only appsail:cip-api
 catalyst deploy --only appsail:cip-console

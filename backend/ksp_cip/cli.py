@@ -39,7 +39,11 @@ def command_seed(args: argparse.Namespace) -> int:
         f"  ring     : {len(manifest.get('ring', {}).get('members', []))} people, "
         f"{manifest.get('ring', {}).get('case_count', 0)} cases\n"
     )
-    print(f"Sign in at http://127.0.0.1:8000 — demo accounts are listed on the login screen.")
+    # No URL: seeding does not choose the serve port, and printing 8000 here
+    # was wrong whenever the caller used another one (`cip.py run --port`,
+    # `serve --port`). ASCII only, because a Windows console defaults to cp1252
+    # and renders an em dash as a replacement character.
+    print("Start the platform with `python cip.py` - demo accounts are listed on the login screen.")
     return 0
 
 

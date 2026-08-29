@@ -1,49 +1,20 @@
 # Pending work and blockers
 
-Status as of 28 Aug 2026. Every item says **what** is left, **why** it is
+Status as of **29 Aug 2026**. Every item says **what** is left, **why** it is
 blocked, and **who or what unblocks it**. Anything not listed here is done and
-covered by the test suite (**554 passing, 9 skipped** — the 9 skips are
+covered by the test suite (**593 passing, 9 skipped** — the 9 skips are
 live-Catalyst and GPU tests that require credentials/hardware).
 
 Ordered by what blocks what, not by size.
 
 ---
 
-## A. Blocking everything else — source control
+## A. Source control and local correctness — **resolved**
 
-### A1. Nine bug fixes are uncommitted and unpushed
-**State:** fixed, tested, running locally — but living only in the working tree
-on `main`. If this machine is lost, the work is lost.
-
-Files changed:
-```
-backend/ksp_cip/interface/api/main.py                      # Windows MIME bug
-backend/ksp_cip/application/agents/network_intelligence.py # 3 fixes
-backend/ksp_cip/application/agents/investigation_support.py# charges "None §None"
-backend/ksp_cip/application/services/authorization.py      # supervisor scope + label
-backend/ksp_cip/infrastructure/db/repositories/cases.py    # act/section alias
-backend/ksp_cip/infrastructure/catalyst/datastore.py       # 2 Catalyst fixes
-backend/ksp_cip/interface/container.py                     # migrations guard
-backend/ksp_cip/interface/api/deps.py                      # identity provider
-backend/ksp_cip/interface/api/routers/voice.py             # identity provider
-backend/ksp_cip/interface/api/routers/export.py            # bytes + charges
-catalyst/catalyst.json, catalyst/circuits/nightly.json     # cron/circuit fix
-+ 3 new test files, 2 new docs
-```
-**Blocker:** none — needs a decision on branch name and a commit.
-**Note:** `backend/var/ksp_cip.db` and new `landing/*.ndjson` files also show as
-modified/untracked. The `.db` is a local seed artifact and should **not** be
-committed; the landing batches are tracked by existing convention. Stage
-deliberately, do not `git add -A`.
-
-### A2. The "new branch" is not on the remote
-A live `git ls-remote https://github.com/Kanishk-Rungta/Datathon.git` returns
-only: `main`, `after-deployed-fixes`, `feature/v2-catalyst-adapters-and-analytics`,
-`implementation-v2.1-maintenance`, `implementation-v3-catalyst-deployment`.
-
-**Blocker:** unknown — the push went to a fork, a different repo, or did not
-land. Run `git remote -v` and `git log --oneline -3` in that checkout.
-Until it is found, its contents cannot be reviewed or merged.
+### A1–A2. The nine bug fixes are committed
+They are in `main` as `c978319` ("Fix nine defects across product, Catalyst
+adapters and deployment descriptor"), merged by `8927909`. The missing-branch
+question in the previous revision of this file is moot. **No action needed.**
 
 ### A3. The 14 post-deployment fixes — **all verified done**
 Confirmed present in code *and* exercised live against the running API:
@@ -54,16 +25,64 @@ cards, authenticated PDF blob download, chart bottom margin (62px),
 environment-gated demo accounts, financial overview branch, and the
 sensitive-demographics graceful refusal. **No action needed.**
 
+### A4. Twelve further defects found and fixed, 29 Aug 2026
+Full table in [`CLAUDE.md` §10](../CLAUDE.md). The four that mattered most:
+
+- **The checked-in database had zero user accounts.** 4,200 cases, 26k graph
+  edges, and nobody who could sign in — a seed interrupted after the
+  intelligence refresh. A fresh clone was unusable. Re-seeded; the tail of the
+  pipeline is now asserted by `tests/integration/test_seed_reset.py`.
+- **`seed --reset` had never worked.** `curated_ComplainantDetails` was missing
+  from the truncation list, so every reset died on a foreign key.
+- **`cip-console` would have deployed and served nothing.** `server.js` read
+  the console build from `frontend/dist`, outside the directory Catalyst
+  ships. There is now a `console` artifact target, and `catalyst.json`
+  separates `source` from `deploy_source`.
+- **A first Catalyst deploy always failed at startup.** `_bootstrap.py`
+  defaulted the data store to Catalyst but left the file store on `local`, a
+  combination the settings validator rejects by design. Both now default
+  together.
+
+### A5. One entry point, 29 Aug 2026
+There were three front doors (`scripts/*.sh`, `scripts/*.ps1`, and the
+application CLI), none runnable by double-click on Windows, each with its own
+copy of the install logic. `cip.py` at the repository root is now the single
+entry point — `python cip.py` installs, seeds if needed, and serves — with
+`cip.bat` as a double-clickable Windows wrapper and the shell scripts reduced
+to thin wrappers over it. `python cip.py doctor` reports what state a checkout
+is in and names the one command that fixes the first problem it finds;
+`python cip.py package` builds the Catalyst artifacts.
+
+It never imports `ksp_cip` and never builds the app: `get_app()` stays the only
+application factory, and Catalyst runs `server.py`, not the launcher. Pinned by
+`tests/unit/test_launcher.py`.
+
+**No action needed** — but re-read `CLAUDE.md` §6 before touching the seed
+pipeline, the seasonal/forecast refusal gates, or the Catalyst entrypoints.
+
 ---
 
-## B. Blocked on Catalyst credentials (expected ~16:00)
+## B. Blocked on Catalyst credentials
 
 ### B1. Deploy to the live project
 Nothing in section A reaches the live site until deployed. The live AppSail
 currently runs a **stale build that fails ~7 of 10 capability areas** and
 answers the prohibited "predict who will commit a crime" query instead of
-refusing it (see `COMPARISON_REPORT.md`). Redeploying is the single highest
--impact action available.
+refusing it (see `COMPARISON_REPORT.md`). Redeploying is the single
+highest-impact action available.
+
+**Build the artifacts first — this changed on 29 Aug.** Deploying
+`catalyst/appsail/*` directly ships an entrypoint without the code it needs.
+Stage all three, then point `appsail:add` at `dist/`:
+
+```bash
+python cip.py package     # builds the console if needed, then stages all three
+```
+
+Each target self-verifies and writes a SHA-256 manifest; the console target
+fails the build if `frontend/dist` has not been built. `catalyst.json` records
+the `build` command and `deploy_source` per component.
+
 **Blocker:** `catalyst login` — browser OAuth against a real Zoho account.
 Only the project owner can do this; it cannot be scripted or delegated.
 
@@ -217,16 +236,41 @@ re-discovers them as bugs.
   bucket reports `insufficient_history`. Intended, not a bug.
 - **`sample_stddev` on very short histories** — the z-score floor (1.0) does
   most of the work.
+- **Event-window comparison has an endpoint but no intent.** "Compare crime
+  during Dasara with the baseline" classifies as `GENERAL_QA` and falls
+  through to case retrieval; `POST /analytics/event-comparison` works. Adding
+  an intent means a new `Intent` member, a classifier rule, a weight that does
+  not steal from `SEASONAL_QUERY`, an agent branch and eval fixtures — worth
+  doing deliberately rather than as a one-line addition.
+- **An unclassifiable question returns an unfiltered case list.** "asdf qwerty"
+  answers "4,200 FIRs match that description", which is true of the filter
+  (there is none) but reads as a match. Asking what the user meant would be
+  better; changing it touches the routing eval corpus.
 
 ---
 
 ## Suggested order
 
-1. **A1 + A2** — commit and push; locate the missing branch. Nothing else is
-   safe until the work is in version control.
-2. **B1 + B2** — deploy and re-seed. Biggest visible improvement, since live
-   is running a stale build that fails a safety check.
-3. **B5** — API Gateway, Slate, Signals, Pipelines. Fast once logged in.
-4. **B3 + B4** — the four service swaps and the auth frontend. Most code
+0. **Commit the 29 Aug hardening pass (A4).** It is in the working tree, not in
+   version control. It includes the fix that makes a fresh clone usable at all,
+   and the one without which the console deploys empty. Stage deliberately —
+   `backend/var/ksp_cip.db` is a tracked 85 MB artifact and re-seeding rewrites
+   all of it, which is worth a deliberate decision rather than `git add -A`.
+1. **B1 + B2** — build the artifacts, deploy, re-seed. Biggest visible
+   improvement, since live is running a stale build that fails a safety check.
+2. **B5** — API Gateway, Slate, Signals, Pipelines. Fast once logged in.
+   Note that **Slate deletes the `cip-console` Node process entirely** —
+   `dist/cip-console/dist` is already a plain static build, so that is the
+   cheapest item on this list.
+3. **B3 + B4** — the four service swaps and the auth frontend. Most code
    churn; do them once the endpoint samples are in hand.
-5. **C1** — only if a GPU box is available before the deadline.
+4. **C1** — only if a GPU box is available before the deadline.
+
+### Worth a decision, not a fix
+
+`backend/var/ksp_cip.db` is tracked in git: an 85 MB generated artifact whose
+diff is unreviewable and which was, until this pass, silently wrong. Keeping it
+buys "clone and run without seeding". The alternative is to untrack it and let
+`seed` build it, which is one extra documented command and roughly 100 seconds.
+Either is defensible; drifting between them is not, which is why it is written
+down here.

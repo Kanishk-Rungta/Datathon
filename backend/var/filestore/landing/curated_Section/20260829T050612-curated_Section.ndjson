@@ -1,0 +1,50 @@
+{"ActCode": "BNS", "SectionCode": "103", "SectionDescription": "Punishment for murder", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "302", "SectionDescription": "Punishment for murder", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "109", "SectionDescription": "Attempt to murder", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "307", "SectionDescription": "Attempt to murder", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "117", "SectionDescription": "Voluntarily causing grievous hurt", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "325", "SectionDescription": "Grievous hurt", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "115", "SectionDescription": "Voluntarily causing hurt", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "323", "SectionDescription": "Voluntarily causing hurt", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "137", "SectionDescription": "Kidnapping", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "363", "SectionDescription": "Punishment for kidnapping", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "305", "SectionDescription": "Theft in dwelling house", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "380", "SectionDescription": "Theft in dwelling house", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "303", "SectionDescription": "Theft", "Active": 1}
+{"ActCode": "MVA", "SectionCode": "39", "SectionDescription": "Necessity for registration", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "379", "SectionDescription": "Punishment for theft", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "331", "SectionDescription": "House trespass and house breaking", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "457", "SectionDescription": "Lurking house trespass", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "309", "SectionDescription": "Robbery", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "392", "SectionDescription": "Punishment for robbery", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "310", "SectionDescription": "Dacoity", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "395", "SectionDescription": "Punishment for dacoity", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "304", "SectionDescription": "Snatching", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "379A", "SectionDescription": "Snatching", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "74", "SectionDescription": "Assault on woman with intent to outrage modesty", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "354", "SectionDescription": "Assault on woman", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "85", "SectionDescription": "Cruelty by husband or relatives", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "498A", "SectionDescription": "Cruelty", "Active": 1}
+{"ActCode": "DPA", "SectionCode": "4", "SectionDescription": "Penalty for demanding dowry", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "304B", "SectionDescription": "Dowry death", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "318", "SectionDescription": "Cheating", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "420", "SectionDescription": "Cheating and dishonestly inducing delivery", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "316", "SectionDescription": "Criminal breach of trust", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "406", "SectionDescription": "Criminal breach of trust", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "336", "SectionDescription": "Forgery", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "465", "SectionDescription": "Punishment for forgery", "Active": 1}
+{"ActCode": "ITA", "SectionCode": "66D", "SectionDescription": "Cheating by personation using computer resource", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "191", "SectionDescription": "Rioting", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "147", "SectionDescription": "Punishment for rioting", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "189", "SectionDescription": "Unlawful assembly", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "143", "SectionDescription": "Unlawful assembly", "Active": 1}
+{"ActCode": "BNS", "SectionCode": "351", "SectionDescription": "Criminal intimidation", "Active": 1}
+{"ActCode": "IPC", "SectionCode": "506", "SectionDescription": "Criminal intimidation", "Active": 1}
+{"ActCode": "NDPS", "SectionCode": "20", "SectionDescription": "Contravention in relation to cannabis", "Active": 1}
+{"ActCode": "NDPS", "SectionCode": "22", "SectionDescription": "Contravention in relation to psychotropic substances", "Active": 1}
+{"ActCode": "EXC", "SectionCode": "32", "SectionDescription": "Penalty for illegal possession", "Active": 1}
+{"ActCode": "EXC", "SectionCode": "34", "SectionDescription": "Penalty for illegal transport", "Active": 1}
+{"ActCode": "KPA", "SectionCode": "87", "SectionDescription": "Gaming in common gaming house", "Active": 1}
+{"ActCode": "KPA", "SectionCode": "88", "SectionDescription": "Penalty for gaming", "Active": 1}
+{"ActCode": "ARMS", "SectionCode": "25", "SectionDescription": "Punishment for certain offences", "Active": 1}
+{"ActCode": "ARMS", "SectionCode": "27", "SectionDescription": "Punishment for using arms", "Active": 1}

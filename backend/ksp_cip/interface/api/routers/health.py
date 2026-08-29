@@ -82,7 +82,16 @@ def capabilities(container: ContainerDep) -> dict[str, Any]:
             "verified against the original figures and citations."
         ),
         "embedding_model": settings.embedding_model_name,
-        "graph_backend": "networkx-in-memory",
+        # Read from configuration, not hard-coded: this endpoint is what the
+        # console badges the deployment with, and a Neo4j-backed deployment
+        # reporting "networkx-in-memory" tells the reader the opposite of the
+        # truth about the one limitation this field exists to disclose.
+        "graph_backend": str(settings.graph_backend),
+        "graph_backend_notice": (
+            "The graph is held in memory by NetworkX. Correct at this scale, not statewide."
+            if str(settings.graph_backend) == "networkx" else
+            "Graph traversal runs against Neo4j; NetworkX remains the automatic fallback."
+        ),
         "datastore_backend": str(settings.datastore_backend),
         "financial_data": "synthetic extension — not part of the source FIR schema",
         "voice_input": {

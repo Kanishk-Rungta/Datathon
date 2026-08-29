@@ -261,9 +261,18 @@ class SeedPipeline:
             "cip_repeat_offender_score", "cip_entity_resolution_link", "cip_person_identity",
             "cip_embedding_index", "cip_embedding_stats", "cip_graph_edge",
             "ext_financial_transaction", "ext_socioeconomic_indicator",
+            # Synthetic demo reference rows. Truncated for the same reason as
+            # ext_socioeconomic_indicator: both are re-seeded relative to the
+            # new anchor date, and _seed_events()/_seed_socioeconomic() skip
+            # when rows already exist -- so leaving them behind would pin the
+            # festival windows to the *previous* seed's dates.
+            "cip_event_calendar",
             # curated children
             "curated_ChargesheetDetails", "curated_ArrestSurrender",
             "curated_ActSectionAssociation", "curated_Accused", "curated_Victim",
+            # ComplainantDetails is NOT NULL REFERENCES curated_CaseMaster; omitting
+            # it made every --reset fail with "FOREIGN KEY constraint failed".
+            "curated_ComplainantDetails",
             "curated_CaseMaster",
             "curated_CrimeHeadActSection", "curated_Section", "curated_Act",
             "curated_CrimeSubHead", "curated_CrimeHead",
@@ -278,5 +287,11 @@ class SeedPipeline:
         ]
         with self._store.transaction():
             for table in tables:
-                self._store.execute(f'DELETE FROM "{table}"', {})
+                # Unquoted, like every other DELETE in the codebase. This was
+                # the one place that quoted the identifier, and it is also the
+                # one place a `--reset` reaches the Catalyst adapter, which
+                # forwards the statement to ZCQL -- a dialect with no quoted
+                # identifiers. Every name in the list above is a plain
+                # identifier, so the quotes bought nothing on SQLite either.
+                self._store.execute(f"DELETE FROM {table}", {})
         LOGGER.info("tables_truncated", extra={"tables": len(tables)})

@@ -1,9 +1,9 @@
 {
   "seed": 20260725,
-  "anchor_date": "2026-07-25",
+  "anchor_date": "2026-08-29",
   "target_cases": 4200,
   "generated_cases": 4200,
-  "transactions": 3285,
+  "transactions": 3482,
   "load": {
     "tables": {
       "curated_State": {
@@ -112,13 +112,13 @@
         "unchanged": 0
       },
       "curated_Victim": {
-        "raw": 4728,
-        "curated": 4728,
+        "raw": 4745,
+        "curated": 4745,
         "unchanged": 0
       },
       "curated_Accused": {
-        "raw": 5164,
-        "curated": 5164,
+        "raw": 5242,
+        "curated": 5242,
         "unchanged": 0
       },
       "curated_ActSectionAssociation": {
@@ -127,18 +127,18 @@
         "unchanged": 0
       },
       "curated_ArrestSurrender": {
-        "raw": 1248,
-        "curated": 1248,
+        "raw": 1324,
+        "curated": 1324,
         "unchanged": 0
       },
       "curated_ChargesheetDetails": {
-        "raw": 1988,
-        "curated": 1988,
+        "raw": 2031,
+        "curated": 2031,
         "unchanged": 0
       }
     },
-    "raw_rows": 31631,
-    "curated_rows": 31631,
+    "raw_rows": 31845,
+    "curated_rows": 31845,
     "unchanged": 0
   },
   "data_quality": {
@@ -147,11 +147,11 @@
     "warnings": []
   },
   "intelligence": {
-    "identities": 4009,
-    "review_links": 5668,
-    "auto_links": 4761,
-    "edges": 26444,
-    "offender_scores": 373,
+    "identities": 4128,
+    "review_links": 6067,
+    "auto_links": 4711,
+    "edges": 27050,
+    "offender_scores": 327,
     "embedding_documents": 8400,
     "hotspot_cells": 8,
     "alerts": 2,
@@ -160,46 +160,42 @@
   },
   "users": [
     {
-      "username": "io.bengaluru",
-      "role": "investigator",
-      "created": true,
-      "home_unit_id": 2023
+      "username": "admin.platform",
+      "role": "platform_admin",
+      "created": false
     },
     {
       "username": "analyst.state",
       "role": "analyst",
-      "created": true,
-      "home_unit_id": null
-    },
-    {
-      "username": "sp.mysuru",
-      "role": "supervisor",
-      "created": true,
-      "home_unit_id": 2141
-    },
-    {
-      "username": "policy.home",
-      "role": "policymaker",
-      "created": true,
-      "home_unit_id": null
+      "created": false
     },
     {
       "username": "auditor.internal",
       "role": "auditor",
-      "created": true,
-      "home_unit_id": null
+      "created": false
     },
     {
-      "username": "admin.platform",
-      "role": "platform_admin",
-      "created": true,
-      "home_unit_id": null
+      "username": "io.bengaluru",
+      "role": "investigator",
+      "created": false
+    },
+    {
+      "username": "policy.home",
+      "role": "policymaker",
+      "created": false
+    },
+    {
+      "username": "sp.mysuru",
+      "role": "supervisor",
+      "created": false
     }
   ],
+  "events": 3,
+  "socioeconomic_districts": 31,
   "manifest": {
     "case_count": 4200,
     "seed": 3840,
-    "anchor_date": "2026-07-25",
+    "anchor_date": "2026-08-29",
     "hotspots": [
       {
         "district_id": 2922,
@@ -302,31 +298,23 @@
     },
     "repeat_offenders": [
       {
-        "name": "D. Vincent Lamani",
-        "cases": 23
+        "name": "Savitha Jain",
+        "cases": 25
       },
       {
         "name": "J. Keshava Kadam",
-        "cases": 23
+        "cases": 24
       },
       {
-        "name": "Ambika Elimane",
-        "cases": 22
-      },
-      {
-        "name": "Ravi Gadag",
-        "cases": 22
-      },
-      {
-        "name": "Savitha Jain",
-        "cases": 21
-      },
-      {
-        "name": "Usha Hosamani",
-        "cases": 21
+        "name": "D. Vincent Lamani",
+        "cases": 24
       },
       {
         "name": "R. B. Mallikarjun Hosamani",
+        "cases": 22
+      },
+      {
+        "name": "Ambika Elimane",
         "cases": 20
       },
       {
@@ -334,28 +322,36 @@
         "cases": 20
       },
       {
+        "name": "Ravi Gadag",
+        "cases": 19
+      },
+      {
         "name": "Rajesh Saldanha",
+        "cases": 17
+      },
+      {
+        "name": "Bhagyamma Lobo",
         "cases": 16
       },
       {
-        "name": "Y. Mustafa Patil",
-        "cases": 15
+        "name": "Usha Hosamani",
+        "cases": 16
       },
       {
         "name": "B. D. Byrappa Jain",
         "cases": 15
       },
       {
-        "name": "Y. Ashok Pathan",
-        "cases": 13
+        "name": "V. V. Naveen Chavan",
+        "cases": 14
       },
       {
-        "name": "N. Joseph Dsouza",
+        "name": "S. Manjunath Dandin",
         "cases": 12
       },
       {
-        "name": "B. Ambika Shetter",
-        "cases": 11
+        "name": "Rashmi Joshi",
+        "cases": 12
       },
       {
         "name": "Divya Odeyar",
@@ -363,37 +359,37 @@
       }
     ],
     "district_case_counts": {
-      "Mysuru": 345,
-      "Chamarajanagara": 81,
-      "Davanagere": 208,
-      "Uttara Kannada": 86,
-      "Bengaluru City": 611,
-      "Haveri": 85,
-      "Udupi": 89,
-      "Vijayanagara": 69,
-      "Dharwad": 143,
-      "Ballari": 348,
-      "Bengaluru Rural": 109,
-      "Raichur": 86,
-      "Kalaburagi": 127,
-      "Vijayapura": 100,
-      "Dakshina Kannada": 177,
-      "Belagavi": 144,
-      "Yadgir": 55,
-      "Tumakuru": 120,
-      "Kolar": 90,
-      "Bagalkote": 94,
-      "Chikkaballapura": 92,
-      "Gadag": 60,
-      "Hassan": 103,
-      "Chitradurga": 79,
-      "Bidar": 87,
-      "Shivamogga": 247,
-      "Chikkamagaluru": 75,
-      "Ramanagara": 74,
-      "Mandya": 90,
-      "Koppal": 72,
-      "Kodagu": 54
+      "Mysuru": 336,
+      "Chamarajanagara": 87,
+      "Davanagere": 209,
+      "Uttara Kannada": 97,
+      "Bengaluru City": 594,
+      "Dharwad": 168,
+      "Bagalkote": 96,
+      "Bidar": 94,
+      "Dakshina Kannada": 153,
+      "Vijayapura": 104,
+      "Kolar": 79,
+      "Ramanagara": 85,
+      "Chikkaballapura": 96,
+      "Haveri": 83,
+      "Chikkamagaluru": 86,
+      "Hassan": 113,
+      "Kalaburagi": 141,
+      "Mandya": 78,
+      "Belagavi": 119,
+      "Koppal": 79,
+      "Raichur": 100,
+      "Gadag": 69,
+      "Yadgir": 66,
+      "Chitradurga": 75,
+      "Shivamogga": 223,
+      "Udupi": 96,
+      "Bengaluru Rural": 105,
+      "Vijayanagara": 62,
+      "Tumakuru": 115,
+      "Kodagu": 49,
+      "Ballari": 343
     },
     "planted_identities": {
       "S. V. Devaraj Naik": [
@@ -1085,7 +1081,13 @@
         "D. Vincent Lamani",
         "Vincent Lamani"
       ]
+    },
+    "financial_burst": {
+      "ref": "E00001",
+      "label": "Malnad Associates",
+      "day": "2026-07-15",
+      "txn_count": 9
     }
   },
-  "duration_seconds": 58.01
+  "duration_seconds": 38.76
 }

@@ -34,16 +34,38 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_KSP_CIP = REPO_ROOT / "backend" / "ksp_cip"
 BOOTSTRAP_SRC = REPO_ROOT / "catalyst" / "_bootstrap.py"
 
+#: ``imports`` is what the self-containment check actually imports for that
+#: target, and it is deliberately *not* the same list for both. The refresh
+#: function only ever reaches ``ksp_cip.interface.container``; importing the
+#: FastAPI app for it too (as this script used to) would have quietly proved a
+#: dependency the function's own ``requirements.txt`` does not declare.
 TARGETS = {
     "api": {
+        "kind": "python",
         "source_dir": REPO_ROOT / "catalyst" / "appsail" / "api",
         "entrypoint": "server.py",
         "extra_files": ["app-config.json", "requirements.txt"],
+        "imports": ["ksp_cip", "ksp_cip.interface.container", "ksp_cip.interface.api.main"],
     },
     "refresh": {
+        "kind": "python",
         "source_dir": REPO_ROOT / "catalyst" / "functions" / "cip_refresh",
         "entrypoint": "main.py",
         "extra_files": ["catalyst-config.json", "requirements.txt"],
+        "imports": ["ksp_cip", "ksp_cip.interface.container"],
+    },
+    # The console is a Node service, so there is no Python package to stage --
+    # but it has the same P1-03 problem the Python entrypoints had: Catalyst
+    # ships only the directory named by `source`, and `server.js` used to read
+    # the console build from `../../../frontend/dist`, which exists in a
+    # checkout and nowhere in a deployment. Staging copies the build in beside
+    # the server, which is the first location `resolveDist()` looks in.
+    "console": {
+        "kind": "node",
+        "source_dir": REPO_ROOT / "catalyst" / "appsail" / "console",
+        "entrypoint": "server.js",
+        "extra_files": ["app-config.json", "package.json"],
+        "static_dir": (REPO_ROOT / "frontend" / "dist", "dist"),
     },
 }
 
@@ -83,7 +105,7 @@ def build_manifest(staging: Path) -> dict[str, object]:
     }
 
 
-def verify_self_contained(staging: Path, python_executable: str) -> None:
+def verify_self_contained(staging: Path, python_executable: str, modules: list[str]) -> None:
     """Import ``ksp_cip`` with sys.path containing only the staging dir.
 
     ``-I`` (isolated mode) additionally strips the environment's own
@@ -94,13 +116,13 @@ def verify_self_contained(staging: Path, python_executable: str) -> None:
     # the standard library is still reachable through the base interpreter's
     # own entries -- only the staging directory needs adding, at the front,
     # so nothing else on this specific path could satisfy the import instead.
+    imports = "".join(f"import {module}; " for module in modules)
     script = (
         "import sys; "
         f"sys.path.insert(0, {str(staging)!r}); "
-        "import ksp_cip; "
-        "import ksp_cip.interface.container; "
-        "import ksp_cip.interface.api.main; "
-        "print('OK: ksp_cip imports with sys.path limited to the staging directory')"
+        + imports
+        + "print('OK: " + ", ".join(modules)
+        + " import with sys.path limited to the staging directory')"
     )
     result = subprocess.run(
         [python_executable, "-I", "-c", script],
@@ -120,6 +142,25 @@ def verify_compiles(staging: Path) -> None:
         raise SystemExit("Self-containment check FAILED — one or more staged files do not compile.")
 
 
+def verify_static_bundle(staging: Path, spec: dict) -> None:
+    """A Node target is self-contained when nothing it serves lives outside it.
+
+    The equivalent of the Python import check: prove the staged directory
+    carries its own console build rather than reaching back into the checkout.
+    """
+    entrypoint = staging / spec["entrypoint"]
+    if not entrypoint.is_file():
+        raise SystemExit(f"Self-containment check FAILED - {entrypoint} is missing.")
+    dest_name = spec["static_dir"][1]
+    index = staging / dest_name / "index.html"
+    if not index.is_file():
+        raise SystemExit(
+            f"Self-containment check FAILED - the staged artifact has no {dest_name}/index.html, "
+            "so the deployed service would serve nothing."
+        )
+    print(f"OK: {spec['entrypoint']} and {dest_name}/index.html are both inside the staging directory")
+
+
 def build(target: str, output: Path, *, python_executable: str, check_only: bool) -> None:
     spec = TARGETS[target]
     source_dir: Path = spec["source_dir"]
@@ -129,21 +170,36 @@ def build(target: str, output: Path, *, python_executable: str, check_only: bool
             shutil.rmtree(output)
         output.mkdir(parents=True)
 
-        copy_package(BACKEND_KSP_CIP, output / "ksp_cip")
-        shutil.copy2(BOOTSTRAP_SRC, output / "_bootstrap.py")
+        if spec["kind"] == "python":
+            copy_package(BACKEND_KSP_CIP, output / "ksp_cip")
+            shutil.copy2(BOOTSTRAP_SRC, output / "_bootstrap.py")
+
         shutil.copy2(source_dir / spec["entrypoint"], output / spec["entrypoint"])
         for extra in spec["extra_files"]:
             src = source_dir / extra
             if src.exists():
                 shutil.copy2(src, output / extra)
 
-    verify_compiles(output)
-    verify_self_contained(output, python_executable)
+        static = spec.get("static_dir")
+        if static:
+            src, dest_name = static
+            if not (src / "index.html").is_file():
+                raise SystemExit(
+                    f"Cannot stage '{target}': {src} has no index.html. "
+                    "Build the console first:  cd frontend && npm install && npm run build"
+                )
+            shutil.copytree(src, output / dest_name)
+
+    if spec["kind"] == "python":
+        verify_compiles(output)
+        verify_self_contained(output, python_executable, list(spec["imports"]))
+    else:
+        verify_static_bundle(output, spec)
 
     manifest = build_manifest(output)
     manifest_path = output.parent / f"{output.name}.manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-    print(f"Staged '{target}' at {output} — {manifest['file_count']} files, "
+    print(f"Staged '{target}' at {output} - {manifest['file_count']} files, "
           f"{manifest['total_bytes']:,} bytes. Manifest: {manifest_path}")
 
 

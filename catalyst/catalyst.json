@@ -8,6 +8,8 @@
       "type": "event",
       "stack": "python_3_11",
       "source": "functions/cip_refresh",
+      "deploy_source": "dist/cip-refresh",
+      "build": "python scripts/build_catalyst_artifact.py --target refresh",
       "description": "Runs one pipeline stage (ingest, data_quality, intelligence, retention) per Circuit invocation.",
       "memory": 1024,
       "timeout": 900
@@ -17,14 +19,20 @@
     {
       "name": "cip-console",
       "source": "appsail/console",
+      "deploy_source": "dist/cip-console",
+      "build": "npm --prefix frontend install && npm --prefix frontend run build && python scripts/build_catalyst_artifact.py --target console",
       "stack": "node18",
-      "description": "Static React console. Serves frontend/dist and proxies /api to the cip-api AppSail service."
+      "description": "Static React console. Serves the built console and proxies /api to the cip-api AppSail service.",
+      "comment": "DEPLOY FROM deploy_source, NOT source. Catalyst ships only the directory it is given, and the console build lives at frontend/dist, outside appsail/console -- the same P1-03 trap the Python entrypoints had. `build_catalyst_artifact.py --target console` stages server.js plus a copy of frontend/dist into dist/cip-console and fails the build if that copy is missing. server.js resolves its document root in the order CIP_CONSOLE_DIST, ./dist (staged), ../../../frontend/dist (checkout), so the same file works in both layouts. NOT VERIFIED: that `node18` is the stack identifier a live project accepts -- only the python_<major>_<minor> convention was confirmed against the CLI (docs/deployment/v3-catalyst-commands.md)."
     },
     {
       "name": "cip-api",
       "source": "appsail/api",
+      "deploy_source": "dist/cip-api",
+      "build": "python scripts/build_catalyst_artifact.py --target api",
       "stack": "python_3_11",
-      "description": "Runs the FastAPI application (ksp_cip.interface.api.main:get_app) under uvicorn. Replaces a prior Advanced I/O function whose handler had no documented ASGI bridge -- see docs/deployment/catalyst-runtime.md."
+      "description": "Runs the FastAPI application (ksp_cip.interface.api.main:get_app) under uvicorn. Replaces a prior Advanced I/O function whose handler had no documented ASGI bridge -- see docs/deployment/catalyst-runtime.md.",
+      "comment": "DEPLOY FROM deploy_source, NOT source: appsail/api holds only the entrypoint, and the staged artifact is what carries the ksp_cip package with it."
     }
   ],
   "datastore": {

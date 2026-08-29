@@ -105,6 +105,21 @@ catalyst slate:link
 target change, not a rewrite — it removes the `cip-console` Node process
 entirely. Keep `/api` pointed at the `cip-api` service.
 
+Two notes added 29 Aug 2026:
+
+- **Slate also removes a real defect rather than only a process.** `server.js`
+  read its document root from outside the directory Catalyst ships, so
+  `cip-console` would have deployed and served nothing. That is fixed
+  (`resolveDist()` plus a `--target console` artifact), but a static host has
+  no document root to get wrong at all.
+- **The `/api` path is the thing to plan for.** `cip-console` currently gives
+  the browser a single origin by proxying. Slate does not proxy, so moving
+  there means either an API Gateway route (#18) putting `/api/v1/*` on the
+  same origin, or setting `KSPCIP_CORS_ORIGINS` to the Slate origin and
+  letting the console call `cip-api` cross-origin. The first is preferable —
+  the console's API client assumes a same-origin `/api/v1` base and the
+  WebSocket voice stream derives its URL from `window.location`.
+
 ### #5 Domain Mappings
 Console → Domain Mappings → add the domain and complete DNS/SSL validation.
 No CLI equivalent and no committed file.

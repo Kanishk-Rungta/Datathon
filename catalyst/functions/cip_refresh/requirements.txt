@@ -1,8 +1,15 @@
-# This function never imports ksp_cip.interface.api (build_container() does
-# not touch it), so fastapi/python-multipart are not needed here even though
-# they are project-wide dependencies. Verified by static import scan; see
-# scripts/build_catalyst_artifact.py, which checks this at build time rather
-# than trusting this list to stay accurate by hand.
+# This function never imports ksp_cip.interface.api -- main.py imports only
+# ksp_cip.interface.container, and build_container() does not touch the API
+# layer -- so fastapi/python-multipart are not needed here even though they are
+# project-wide dependencies. httpx is likewise absent: this function neither
+# composes an answer nor translates, so it reaches no HTTP provider; the
+# Catalyst adapters it *does* use are all stdlib urllib.
+#
+# `scripts/build_catalyst_artifact.py --target refresh` imports exactly that
+# module set against the staged directory, so a new import reaching into the
+# API layer fails the build. It checks *reachability*, not that every third-
+# party name below is present -- pip install against this file is what proves
+# that, at deploy time.
 pydantic>=2.6
 pydantic-settings>=2.2
 numpy>=1.26

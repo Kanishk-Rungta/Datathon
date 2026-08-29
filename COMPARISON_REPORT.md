@@ -100,3 +100,37 @@ The local changes are currently **uncommitted** in the working tree; nothing can
 3. Redeploy the AppSail from V3.
 4. Re-seed the Catalyst Data Store to ~2,000 cases.
 5. Verify with the safety-guard check (the prediction query must now refuse).
+
+---
+
+## Addendum — 29 August 2026
+
+**The comparison above still stands; the sequence in §6 does not.** Two things
+changed after this report was written.
+
+**The code in §6 is committed.** The nine fixes are in `main` as `c978319`,
+merged by `8927909`. Steps 1 and 2 are done.
+
+**Step 3 needs a build step that did not exist then.** Deploying
+`catalyst/appsail/*` directly ships an entrypoint without the code it needs:
+the API without the `ksp_cip` package, and the console without
+`frontend/dist`. The console defect in particular was found on 29 Aug —
+`server.js` read its document root from three levels above the shipped
+directory, so a redeploy of `cip-console` as described here would have come up
+serving nothing. Stage first:
+
+```bash
+cd frontend && npm install && npm run build && cd ..
+python scripts/build_catalyst_artifact.py --target api
+python scripts/build_catalyst_artifact.py --target refresh
+python scripts/build_catalyst_artifact.py --target console
+```
+
+then deploy from `dist/cip-*`. A further nine defects were fixed in the same
+pass, four of them on the deployment path — see [`CLAUDE.md` §10](CLAUDE.md)
+for the full list and [`docs/PENDING.md` §A4](docs/PENDING.md) for the
+consequences. Local now stands at **581 tests passing, 9 skipped**.
+
+The verdict in §4 is unaffected: the deployed site is still a stale build of
+the same product, and redeploying is still the highest-impact action
+available.

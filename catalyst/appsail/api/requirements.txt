@@ -7,3 +7,8 @@ numpy>=1.26
 networkx>=3.2
 reportlab>=4.1
 jinja2>=3.1
+# Needed only when a hosted LLM provider or Bhashini is selected, but it must
+# be present *before* that switch is flipped: both import httpx lazily, so a
+# missing wheel surfaces as a ModuleNotFoundError on the first live call
+# rather than at startup. Everything else here is used by the default config.
+httpx>=0.27

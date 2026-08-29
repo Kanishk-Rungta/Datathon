@@ -1,0 +1,6 @@
+{"UnitTypeID": 1, "UnitTypeName": "State Headquarters", "CityDistState": "State", "Hierarchy": 1, "Active": 1}
+{"UnitTypeID": 2, "UnitTypeName": "Range Office", "CityDistState": "State", "Hierarchy": 2, "Active": 1}
+{"UnitTypeID": 3, "UnitTypeName": "District Headquarters", "CityDistState": "District", "Hierarchy": 3, "Active": 1}
+{"UnitTypeID": 4, "UnitTypeName": "Sub-Division", "CityDistState": "District", "Hierarchy": 4, "Active": 1}
+{"UnitTypeID": 5, "UnitTypeName": "Circle Office", "CityDistState": "City", "Hierarchy": 5, "Active": 1}
+{"UnitTypeID": 6, "UnitTypeName": "Police Station", "CityDistState": "City", "Hierarchy": 6, "Active": 1}

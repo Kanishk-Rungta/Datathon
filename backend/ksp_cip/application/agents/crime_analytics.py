@@ -33,6 +33,17 @@ SOCIOLOGY_DIMENSIONS = ("occupation", "age_band", "gender", "religion", "caste")
 #: substituted, not silently dropped or rejected.
 VICTIM_DIMENSIONS = ("gender", "age_band")
 SEASONAL_LOOKBACK_MONTHS = 48
+
+#: Attached to *every* seasonal answer, including the ones that report nothing.
+#: A refusal is still an answer to a question about seasonality, and a reader
+#: who is told only "no finding" can still walk away thinking the platform
+#: forecasts. The governance eval (``seasonal-statewide-001``) requires the
+#: phrase on any SEASONAL_QUERY, so it must not live only on the happy path.
+SEASONAL_DISCLAIMER = (
+    "Seasonal analysis compares recorded FIR counts for a calendar month against that same "
+    "month in prior years. This is a historical comparison, not a forecast of what will "
+    "happen next time that month occurs."
+)
 #: The forecast reads as much history as it can get: a backtest needs months
 #: the method was not shown, so a short window would starve the very check that
 #: decides whether the projection is worth publishing.
@@ -220,7 +231,17 @@ class CrimeAnalyticsAgent(BaseAgent):
         named person's* future offending is refused by design (ADR-0006), and
         the evaluation corpus asserts it stays refused.
         """
-        names = request.slots.person_names or request.pinned_person_names
+        # Deliberately `slots.person_names` only, *not* `pinned_person_names`.
+        # A pinned name survives for the whole session, so including it here
+        # made "forecast crime for the next three months" refuse as an
+        # individual prediction purely because an earlier turn had discussed a
+        # person. The legitimate follow-up ("will he reoffend?") is already
+        # covered: MemoryService resolves a person anaphor into
+        # `slots.person_names` before the request reaches an agent, so the name
+        # is present exactly when the current question actually refers to
+        # someone. Widening this gate back to the pin refuses aggregate
+        # planning questions, which is the opposite of what ADR-0006 asks for.
+        names = request.slots.person_names
         if names or INDIVIDUAL_PREDICTION_RE.search(request.text_english or ""):
             refusal = empty_result_evidence(
                 key="forecast:individual-prediction-refused",
@@ -564,10 +585,13 @@ class CrimeAnalyticsAgent(BaseAgent):
             )
             return AgentResult(
                 agent=self.name, intent=request.intent,
-                summary_claims=[claim(
-                    "No registered cases fall inside that filter, so there is no calendar pattern to compare.",
-                    [nothing], provenance=Provenance.DETERMINISTIC_COMPUTATION,
-                )],
+                summary_claims=[
+                    claim(
+                        "No registered cases fall inside that filter, so there is no calendar pattern to compare.",
+                        [nothing], provenance=Provenance.DETERMINISTIC_COMPUTATION,
+                    ),
+                    claim(SEASONAL_DISCLAIMER),
+                ],
                 evidence=[nothing], traces=[result.trace], confidence=0.85,
             )
 
@@ -580,11 +604,14 @@ class CrimeAnalyticsAgent(BaseAgent):
             )
             return AgentResult(
                 agent=self.name, intent=request.intent,
-                summary_claims=[claim(
-                    f"The available history ({start} to {end}) does not yet cover enough separate years for any "
-                    "calendar month to have a reliable seasonal baseline, so no seasonal finding is reported.",
-                    [nothing], provenance=Provenance.DETERMINISTIC_COMPUTATION,
-                )],
+                summary_claims=[
+                    claim(
+                        f"The available history ({start} to {end}) does not yet cover enough separate years for any "
+                        "calendar month to have a reliable seasonal baseline, so no seasonal finding is reported.",
+                        [nothing], provenance=Provenance.DETERMINISTIC_COMPUTATION,
+                    ),
+                    claim(SEASONAL_DISCLAIMER),
+                ],
                 evidence=[nothing], traces=[result.trace], confidence=0.85,
             )
 
@@ -622,11 +649,7 @@ class CrimeAnalyticsAgent(BaseAgent):
                 f"{', '.join(insufficient_months)} do not yet have enough prior-year history and are excluded "
                 "from this comparison."
             ))
-        claims.append(claim(
-            "These compare recorded FIR counts for a specific calendar month against that same month in prior "
-            "years. This is a historical comparison, not a forecast of what will happen next time that month "
-            "occurs."
-        ))
+        claims.append(claim(SEASONAL_DISCLAIMER))
 
         return AgentResult(
             agent=self.name, intent=request.intent, summary_claims=claims, evidence=evidence_items,

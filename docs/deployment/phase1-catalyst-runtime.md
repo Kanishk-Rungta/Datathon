@@ -203,3 +203,30 @@ imports anything from `infrastructure.catalyst.identity` — only
 `scripts/build_catalyst_artifact.py`; not committed — build output), and the
 updated test suite (339 tests collected, 330 passing locally, 9 skipped by
 design pending live credentials).
+
+---
+
+## Superseded, 29 Aug 2026
+
+Two statements above are no longer accurate. Both are corrected in
+`docs/deployment/catalyst-runtime.md` (addendum) and
+`docs/deployment/v3-phase-d1-artifacts.md` (addendum); noted here so this file
+is not read on its own and believed.
+
+1. **"verified for both targets" is now three targets.** `cip-console` had the
+   same non-self-contained defect the Python artifacts were fixed for: its
+   `server.js` read the console build from outside the directory Catalyst
+   ships. There is now a `--target console`, and `catalyst.json` records
+   `deploy_source` and `build` per component.
+2. **The self-containment check was over-broad, in a way that hid a
+   requirements mismatch.** It imported `ksp_cip.interface.api.main` for the
+   *refresh* target too, proving a FastAPI dependency that function's own
+   `requirements.txt` deliberately omits. Import lists are now per-target.
+
+Also on this path: `_bootstrap.py` defaulted the data store to Catalyst while
+leaving the file store on `local` — a pair `deployment_problems()` rejects, so
+every first deploy would have failed at startup. Both are defaulted together
+now, and `tests/unit/test_catalyst_bootstrap.py` asserts that whatever the
+bootstrap defaults is a combination the validator accepts.
+
+Current suite: **581 passing, 9 skipped.**
