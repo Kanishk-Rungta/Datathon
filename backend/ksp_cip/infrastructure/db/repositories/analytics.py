@@ -119,8 +119,43 @@ def _rollup(
 
 
 class AnalyticsRepository:
-    def __init__(self, store: DataStore) -> None:
+    def __init__(self, store: DataStore, reference: Any | None = None) -> None:
         self._store = store
+        self._reference = reference
+
+    #: Labelling joins dropped from the demographic queries. ZCQL allows at
+    #: most four joins ("More than 4 joins are not allowed", confirmed live),
+    #: and the shared _FROM already spends all four on Unit, District,
+    #: CrimeSubHead and CrimeHead. Adding the person table and a lookup table
+    #: took the sociology crosstab to six, so it could not run on Catalyst at
+    #: all -- the demographic breakdown returned a 500 on the deployed site.
+    #:
+    #: Only `u` is load-bearing: _predicate filters on u.DistrictID. The other
+    #: three exist purely to turn an id into a label, which ReferenceRepository
+    #: already holds in memory. Same remedy CaseRepository uses.
+    _DEMOGRAPHIC_FROM = (
+        " FROM curated_CaseMaster c"
+        " LEFT JOIN curated_Unit u ON u.UnitID = c.PoliceStationID"
+    )
+
+    def _label_maps(self) -> dict[str, dict[Any, Any]]:
+        ref = self._reference
+        if ref is None:
+            return {}
+
+        def index(rows: Any, key: str, value: str) -> dict[Any, Any]:
+            out: dict[Any, Any] = {}
+            for row in rows:
+                if row.get(key) is not None:
+                    out[int(row[key])] = row.get(value)
+            return out
+
+        return {
+            "sub_heads": index(ref.crime_sub_heads(), "CrimeSubHeadID", "CrimeHeadName"),
+            "occupation": index(ref.occupations(), "OccupationID", "OccupationName"),
+            "religion": index(ref.religions(), "ReligionID", "ReligionName"),
+            "caste": index(ref.castes(), "caste_master_id", "caste_master_name"),
+        }
 
     def _predicate(self, filters: AggregateFilter, scope: UnitScope) -> tuple[str, dict[str, Any]]:
         clauses: list[str] = ["c.CrimeRegisteredDate IS NOT NULL"]
@@ -289,6 +324,72 @@ class AnalyticsRepository:
             params,
         )
 
+    def _demographic_crosstab(
+        self,
+        *,
+        dimension: str,
+        person_join: str,
+        id_expressions: dict[str, str],
+        inline_expressions: dict[str, str],
+        where: str,
+        params: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """One dimension x crime-sub-head crosstab, within ZCQL's join budget.
+
+        Selects ids and groups by ids, then attaches labels from the in-memory
+        reference cache. Two joins are used (the person table, and Unit for the
+        district predicate) where the previous shape needed six.
+
+        Rows keep their original keys -- ``dimension_value``, ``sub_head``,
+        ``record_count`` -- so callers are unchanged. Without a reference cache
+        the ids are returned as their own labels rather than failing, which is
+        what the repository already does elsewhere when it is constructed
+        without one.
+        """
+        labels = self._label_maps()
+
+        if dimension in id_expressions:
+            value_sql = id_expressions[dimension]
+            lookup = labels.get(dimension, {})
+        else:
+            value_sql = inline_expressions[dimension]
+            lookup = {}
+
+        rows = self._store.query(
+            f"SELECT {value_sql} AS dimension_value,"
+            " c.CrimeMinorHeadID AS sub_head_id,"
+            " COUNT(*) AS record_count"
+            + self._DEMOGRAPHIC_FROM
+            + person_join
+            + where
+            + " GROUP BY dimension_value, sub_head_id ORDER BY record_count DESC",
+            params,
+        )
+
+        sub_heads = labels.get("sub_heads", {})
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            raw_value = row.get("dimension_value")
+            sub_head_id = row.get("sub_head_id")
+            resolved = raw_value
+            if lookup and raw_value is not None:
+                try:
+                    resolved = lookup.get(int(raw_value), raw_value)
+                except (TypeError, ValueError):
+                    resolved = raw_value
+            label = None
+            if sub_head_id is not None:
+                try:
+                    label = sub_heads.get(int(sub_head_id))
+                except (TypeError, ValueError):
+                    label = None
+            out.append({
+                "dimension_value": resolved,
+                "sub_head": label if label is not None else sub_head_id,
+                "record_count": row.get("record_count"),
+            })
+        return out
+
     def complainant_demographics(
         self, filters: AggregateFilter, scope: UnitScope, *, dimension: str
     ) -> list[dict[str, Any]]:
@@ -310,16 +411,21 @@ class AnalyticsRepository:
             from ....domain.errors import ValidationError
 
             raise ValidationError("Unsupported demographic dimension", dimension=dimension)
-        expression, join = dimension_sql[dimension]
         where, params = self._predicate(filters, scope)
-        return self._store.query(
-            f"SELECT {expression} AS dimension_value, sh.CrimeHeadName AS sub_head, COUNT(*) AS record_count"
-            + self._FROM
-            + " JOIN curated_ComplainantDetails cd ON cd.CaseMasterID = c.CaseMasterID "
-            + join
-            + where
-            + " GROUP BY dimension_value, sub_head ORDER BY record_count DESC",
-            params,
+        return self._demographic_crosstab(
+            dimension=dimension,
+            person_join=" JOIN curated_ComplainantDetails cd ON cd.CaseMasterID = c.CaseMasterID",
+            id_expressions={
+                "occupation": "cd.OccupationID",
+                "religion": "cd.ReligionID",
+                "caste": "cd.CasteID",
+            },
+            inline_expressions={
+                "gender": "cd.GenderID",
+                "age_band": dimension_sql["age_band"][0],
+            },
+            where=where,
+            params=params,
         )
 
     def victim_demographic_dimension(
@@ -351,16 +457,17 @@ class AnalyticsRepository:
                 "victim age and gender",
                 dimension=dimension,
             )
-        expression, join = dimension_sql[dimension]
         where, params = self._predicate(filters, scope)
-        return self._store.query(
-            f"SELECT {expression} AS dimension_value, sh.CrimeHeadName AS sub_head, COUNT(*) AS record_count"
-            + self._FROM
-            + " JOIN curated_Victim v ON v.CaseMasterID = c.CaseMasterID "
-            + join
-            + where
-            + " GROUP BY dimension_value, sub_head ORDER BY record_count DESC",
-            params,
+        return self._demographic_crosstab(
+            dimension=dimension,
+            person_join=" JOIN curated_Victim v ON v.CaseMasterID = c.CaseMasterID",
+            id_expressions={},
+            inline_expressions={
+                "gender": "v.GenderID",
+                "age_band": dimension_sql["age_band"][0],
+            },
+            where=where,
+            params=params,
         )
 
     def total_cases(self, filters: AggregateFilter, scope: UnitScope) -> int:

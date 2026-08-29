@@ -183,7 +183,7 @@ def build_container(settings: Settings | None = None) -> Container:
     # Cases resolve their display labels from the reference cache rather than
     # joining eight lookup tables -- see CaseRepository's docstring.
     cases = CaseRepository(store, reference)
-    analytics = AnalyticsRepository(store)
+    analytics = AnalyticsRepository(store, reference)
     graph_repository = GraphRepository(store)
     embeddings = EmbeddingRepository(store)
     identities = IdentityRepository(store)
