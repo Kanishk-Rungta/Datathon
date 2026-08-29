@@ -4,7 +4,7 @@ Status as of 30 Aug 2026, after the first sustained run against the live
 Catalyst project. Every item says **what** is left, **why** it is blocked, and
 **who or what unblocks it**.
 
-Suite: **616 passing, 10 skipped** (skips are live-Catalyst and GPU tests).
+Suite: **635 passing, 10 skipped** (skips are live-Catalyst and GPU tests).
 
 ---
 
@@ -23,7 +23,23 @@ the individual-prediction refusal:
 | Repeat-offender profiling | ✅ *(was empty; fixed this run)* |
 | Forecast · early warning | ✅ |
 | Safety refusal ("predict who will commit a crime") | ✅ refuses |
+| Financial link analysis · case briefing · ego network | ✅ |
+| Kannada round trip (160 Kannada glyphs in the reply) | ✅ |
+| PDF export via Stratus (reported bytes == downloaded bytes) | ✅ |
 | **Demographic / sociology breakdown** | ❌ **500 — fix committed, not deployed** |
+| Scope labels for `io.bengaluru` / `sp.mysuru` | ⚠️ read "no unit assigned" — **fix committed, not deployed** |
+
+Two further defects were found and fixed this run but, like the demographic
+one, reach the live site only on the next deploy:
+
+- `ReferenceRepository.unit()`/`district()` compared an int to the string the
+  Data Store returns, so a scoped officer's console said "no unit assigned"
+  instead of naming their station, and hotspot cells lost their district label.
+- Graph ACL trimming compared edge `unit_ids` the same way. Not yet reachable
+  live (the graph was loaded from the SQLite seed, so its JSON holds ints) but
+  it becomes reachable the moment the intelligence refresh runs *on* Catalyst
+  — which is what `cip_refresh` and the nightly circuit exist to do. It fails
+  closed, so nothing leaks; a scoped officer would simply see an empty graph.
 
 ---
 
