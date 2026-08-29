@@ -63,7 +63,19 @@ http.createServer((req, res) => {
     // a public endpoint is, so the client module must match the target's own
     // scheme rather than always assuming https.
     const client = target.protocol === 'http:' ? http : https
-    const proxied = client.request(target, { method: req.method, headers: req.headers }, (upstream) => {
+    /* Forward the client's headers, minus `host`.
+     *
+     * `req.headers.host` is the CONSOLE's hostname. Passing it through means
+     * the request arriving at cip-api carries `Host: cip-console-...`, and
+     * Catalyst's ingress routes AppSail traffic by hostname -- so it answers
+     * 400 Bad Request with a Tomcat error page before the API is ever
+     * reached, which this proxy then pipes back verbatim as the console's
+     * own response. Deleting the header lets Node derive it from the target
+     * URL, which is what any correct reverse proxy does.
+     */
+    const headers = { ...req.headers }
+    delete headers.host
+    const proxied = client.request(target, { method: req.method, headers }, (upstream) => {
       res.writeHead(upstream.statusCode, upstream.headers)
       upstream.pipe(res)
     })
