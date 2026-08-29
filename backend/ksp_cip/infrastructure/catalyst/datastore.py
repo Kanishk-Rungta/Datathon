@@ -14,11 +14,16 @@ Three real differences from SQLite are handled here rather than leaking upward:
   is done here with strict escaping — the same discipline the SQLite adapter
   gets from the driver. Only scalars are accepted.
 * **Row limits.** ZCQL caps rows per response, so ``query`` paginates.
+* **Column aliases are discarded.** ``SELECT c.CrimeNo AS crime_no`` comes back
+  as ``{"c": {"CrimeNo": ...}}``. Responses are namespaced by the table alias,
+  so ``_restore_aliases`` puts the alias back against the right table — which
+  is what keeps two joined tables sharing a column name distinguishable.
 
-This adapter is written against the documented REST API and is exercised by
-contract tests that assert translation behaviour without a network. It has not
-been run against a live Catalyst project in this build; that is stated plainly
-rather than implied otherwise.
+Verified against a live Catalyst project (India DC) on 2026-08-29: OAuth
+refresh, ZCQL SELECT, pagination, table/column aliases and joins were all
+exercised end to end, read-only. Writes, the upsert emulation and the bulk
+insert path remain contract-tested only — they have not been run live, and
+saying so is the point of this note.
 """
 
 from __future__ import annotations
@@ -91,7 +96,7 @@ class CatalystAuth:
             raise ProviderError("Catalyst token refresh failed", provider="catalyst") from exc
         if "access_token" not in body:
             raise ProviderError("Catalyst token refresh returned no access token", provider="catalyst",
-                                detail=body.get("error"))
+                                response_detail=body.get("error"))
         self._expires_at = time.time() + int(body.get("expires_in", 3600))
         return str(body["access_token"])
 
@@ -272,13 +277,16 @@ class CatalystDataStore:
     def _zcql(self, statement: str) -> list[dict[str, Any]]:
         body = json.dumps({"query": statement}).encode("utf-8")
         payload = self._call("POST", "/query", body)
+        projection = _select_projection(statement)
         rows: list[dict[str, Any]] = []
         for entry in payload.get("data", []) or []:
             flattened: dict[str, Any] = {}
             for value in entry.values():
                 if isinstance(value, dict):
                     flattened.update(value)
-            rows.append(flattened or entry)
+            row = flattened or dict(entry)
+            _restore_aliases(row, entry, projection)
+            rows.append(row)
         return rows
 
     def _insert_rows(self, table: str, rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -298,8 +306,12 @@ class CatalystDataStore:
         except urllib_error.HTTPError as exc:  # pragma: no cover - network path
             detail = exc.read().decode("utf-8", errors="replace")[:400]
             LOGGER.error("catalyst_http_error", extra={"status": exc.code, "path": path})
+            # `detail` is CIPError's first positional parameter, so passing it as a
+            # keyword here raised TypeError and destroyed the real error. Every
+            # Catalyst HTTP failure surfaced as an opaque TypeError instead of a
+            # ProviderError carrying the response body.
             raise ProviderError("Catalyst request failed", provider="catalyst",
-                                status=exc.code, detail=detail) from exc
+                                status=exc.code, response_detail=detail) from exc
         except urllib_error.URLError as exc:  # pragma: no cover - network path
             raise ProviderError("Catalyst is unreachable", provider="catalyst") from exc
 
@@ -338,6 +350,94 @@ class _Excluded:
     """Marker for an ``excluded.<column>`` reference in a DO UPDATE SET."""
 
     column: str
+
+
+#: Sentinel distinguishing "column absent" from "column present and NULL".
+_MISSING = object()
+
+
+def _select_projection(statement: str) -> list[tuple[str | None, str, str]]:
+    """Parse a SELECT list into ``(namespace, response_key, alias)`` triples.
+
+    Exists because **ZCQL discards column aliases**. ``SELECT c.CrimeNo AS
+    crime_no`` comes back as ``{"c": {"CrimeNo": ...}}`` — the alias is gone,
+    so every repository that reads ``row["crime_no"]`` (73 of them across five
+    repository modules) would ``KeyError`` on Catalyst while passing on SQLite.
+    No contract test caught it because none of them spoke to real ZCQL.
+
+    The response is namespaced by the table *alias* where the query uses one
+    (``FROM curated_CaseMaster c`` -> ``"c"``), which is what makes this
+    recoverable: two joined tables that share a column name stay distinct on
+    the wire, so the alias can be restored against the right one.
+
+    Returns an empty list when the projection cannot be read confidently —
+    ``SELECT *``, a subquery, anything unexpected — so the caller keeps the
+    plain flatten rather than guessing.
+    """
+    select_at = _find_top_level(statement, "SELECT")
+    if select_at < 0:
+        return []
+    from_at = _find_top_level(statement, " FROM ")
+    if from_at < 0 or from_at <= select_at:
+        return []
+    select_list = statement[select_at + len("SELECT"):from_at].strip()
+    if not select_list or "*" in select_list:
+        return []
+
+    projection: list[tuple[str | None, str, str]] = []
+    for item in _split_top_level(select_list):
+        expression = item.strip()
+        if not expression:
+            continue
+        alias = ""
+        as_at = _find_top_level(expression, " AS ")
+        if as_at >= 0:
+            alias = expression[as_at + len(" AS "):].strip().strip('"')
+            expression = expression[:as_at].strip()
+        if not alias:
+            continue  # nothing to restore; the plain flatten already has it
+        namespace: str | None = None
+        key = expression
+        # Only a bare `table.column` reference is namespaced. Anything with a
+        # bracket is an expression (COUNT(ROWID), COALESCE(...)) whose response
+        # key is the expression text itself.
+        if "(" not in expression and expression.count(".") == 1:
+            left, right = expression.split(".", 1)
+            if left.strip() and right.strip():
+                namespace, key = left.strip().strip('"'), right.strip().strip('"')
+        projection.append((namespace, key, alias))
+    return projection
+
+
+def _restore_aliases(
+    row: dict[str, Any],
+    entry: Mapping[str, Any],
+    projection: Sequence[tuple[str | None, str, str]],
+) -> None:
+    """Add alias keys onto an already-flattened row, in place.
+
+    Purely additive: the underlying column names stay, so a caller reading
+    either name keeps working and no data is dropped if the parse was wrong.
+    """
+    for namespace, key, alias in projection:
+        if alias in row:
+            continue
+        value = _MISSING
+        if namespace is not None:
+            scope = entry.get(namespace)
+            if isinstance(scope, Mapping) and key in scope:
+                value = scope[key]
+        if value is _MISSING:
+            # Unqualified, or the namespace was a table name where the response
+            # used the alias (or vice versa). The flattened row already merged
+            # every namespace, so fall back to it, then to the raw expression
+            # text as ZCQL echoes it for aggregates.
+            for candidate in (key, key.replace(" ", "")):
+                if candidate in row:
+                    value = row[candidate]
+                    break
+        if value is not _MISSING:
+            row[alias] = value
 
 
 def _find_top_level(statement: str, needle: str) -> int:

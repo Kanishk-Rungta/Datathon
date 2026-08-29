@@ -17,3 +17,13 @@ backend/var/filestore/exports/
 backend/var/filestore/audio/
 *.db-shm
 *.db-wal
+
+# Real credentials. The app reads .env from the REPO ROOT (see
+# Settings.model_config), not backend/.env. Ignore both paths so a copy in
+# either place can never be committed. .env.example is the tracked template.
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example

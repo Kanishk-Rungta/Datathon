@@ -232,3 +232,83 @@ class TestUnsupportedOperations:
                "no multi-row transaction primitive" in (store.transaction.__doc__ or "")
         with store.transaction():
             pass
+
+
+class TestColumnAliasRestoration:
+    """ZCQL discards column aliases; the adapter puts them back.
+
+    Verified against a live Catalyst project (India DC, 2026-08-29):
+    `SELECT c.CrimeNo AS crime_no` returns {"c": {"CrimeNo": ...}} — the alias
+    is gone. 73 aliases across five repository modules read results by alias,
+    so every one of them would KeyError on Catalyst while passing on SQLite.
+
+    The response is namespaced by the table *alias* where the query uses one,
+    which is what makes two joined tables sharing a column name recoverable.
+    """
+
+    def test_a_qualified_alias_is_parsed_with_its_namespace(self):
+        from ksp_cip.infrastructure.catalyst.datastore import _select_projection
+
+        assert _select_projection(
+            "SELECT c.CrimeNo AS crime_no FROM curated_CaseMaster c"
+        ) == [("c", "CrimeNo", "crime_no")]
+
+    def test_an_expression_alias_has_no_namespace(self):
+        from ksp_cip.infrastructure.catalyst.datastore import _select_projection
+
+        assert _select_projection(
+            "SELECT COUNT(ROWID) AS n FROM t"
+        ) == [(None, "COUNT(ROWID)", "n")]
+
+    def test_unaliased_items_are_skipped(self):
+        from ksp_cip.infrastructure.catalyst.datastore import _select_projection
+
+        assert _select_projection("SELECT CrimeNo, CaseNo FROM t") == []
+
+    def test_select_star_is_refused_rather_than_guessed(self):
+        from ksp_cip.infrastructure.catalyst.datastore import _select_projection
+
+        assert _select_projection("SELECT * FROM t") == []
+
+    def test_a_comma_inside_an_expression_does_not_split_the_list(self):
+        from ksp_cip.infrastructure.catalyst.datastore import _select_projection
+
+        projection = _select_projection(
+            "SELECT COALESCE(a, 0) AS x, b.c AS y FROM t b"
+        )
+        assert projection == [(None, "COALESCE(a, 0)", "x"), ("b", "c", "y")]
+
+    def test_the_alias_is_added_without_dropping_the_column_name(self):
+        from ksp_cip.infrastructure.catalyst.datastore import _restore_aliases
+
+        row = {"CrimeNo": "123"}
+        _restore_aliases(row, {"c": {"CrimeNo": "123"}}, [("c", "CrimeNo", "crime_no")])
+        assert row == {"CrimeNo": "123", "crime_no": "123"}
+
+    def test_two_tables_sharing_a_column_name_stay_distinct(self):
+        """The flattened row collapses them; the namespaced entry does not."""
+        from ksp_cip.infrastructure.catalyst.datastore import _restore_aliases
+
+        entry = {"c": {"CaseMasterID": 1}, "a": {"CaseMasterID": 2}}
+        row = {"CaseMasterID": 2}
+        _restore_aliases(
+            row, entry,
+            [("c", "CaseMasterID", "left_id"), ("a", "CaseMasterID", "right_id")],
+        )
+        assert row["left_id"] == 1
+        assert row["right_id"] == 2
+
+    def test_a_null_column_is_restored_rather_than_treated_as_absent(self):
+        from ksp_cip.infrastructure.catalyst.datastore import _restore_aliases
+
+        row = {"CourtName": None}
+        _restore_aliases(row, {"c": {"CourtName": None}}, [("c", "CourtName", "court_name")])
+        assert "court_name" in row and row["court_name"] is None
+
+    def test_an_unresolvable_alias_is_left_alone(self):
+        """A wrong parse must not invent a key or destroy the row."""
+        from ksp_cip.infrastructure.catalyst.datastore import _restore_aliases
+
+        row = {"CrimeNo": "123"}
+        _restore_aliases(row, {"c": {"CrimeNo": "123"}}, [("zz", "Missing", "nope")])
+        assert row == {"CrimeNo": "123"}

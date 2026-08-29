@@ -7,6 +7,7 @@ state (identity review decisions, admin actions) use their own container.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -15,6 +16,17 @@ import pytest
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
+
+# Point Settings at a file that does not exist, BEFORE ksp_cip is imported.
+# pydantic-settings resolves `env_file` when the settings class is created, so
+# this has to happen above the import below.
+#
+# Without it the suite reads whatever `.env` the developer happens to have at
+# the repo root, and tests that assert on *missing* configuration silently
+# invert: "catalyst backend without a project id is refused" passes on a clean
+# machine and fails the moment someone adds real credentials. Tests must
+# describe the code, not the machine they run on.
+os.environ["KSPCIP_ENV_FILE"] = str(BACKEND_ROOT / "tests" / ".env.absent")
 
 # Makes the evaluation harness importable as ``evals.harness`` from any test
 # module. The tests tree is intentionally not a package (pytest imports test
