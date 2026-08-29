@@ -292,3 +292,50 @@ class TestQualifiedAliasCollision:
         )
         rows = store.query("SELECT COUNT(*) AS n FROM t")
         assert rows[0]["n"] == 7
+
+
+class TestLimitSpellings:
+    """Both LIMIT spellings must be recognised, or the pager double-limits.
+
+    ZCQL caps a page at 300 ("ZCQL CANNOT HAVE MORE THAN 300 ROWS in LIMIT",
+    confirmed live). The pager honours a caller's own bound and pages beneath
+    it -- but only for a bound it can see. The ZCQL comma form used to slip
+    past unparsed and be rejected whenever the count exceeded one page.
+    """
+
+    def test_sqlite_spellings(self):
+        from ksp_cip.infrastructure.catalyst.datastore import _split_limit
+
+        assert _split_limit("SELECT a FROM t LIMIT 50")[1:] == (50, 0)
+        assert _split_limit("SELECT a FROM t LIMIT 25 OFFSET 10")[1:] == (25, 10)
+
+    def test_zcql_comma_spelling(self):
+        from ksp_cip.infrastructure.catalyst.datastore import _split_limit
+
+        assert _split_limit("SELECT a FROM t LIMIT 0, 500")[1:] == (500, 0)
+        assert _split_limit("SELECT a FROM t LIMIT 300, 50")[1:] == (50, 300)
+
+    def test_no_limit_is_unbounded(self):
+        from ksp_cip.infrastructure.catalyst.datastore import _split_limit
+
+        assert _split_limit("SELECT a FROM t")[1:] == (None, 0)
+
+    def test_a_bound_above_a_page_is_paged_not_sent_whole(self, monkeypatch):
+        from ksp_cip.config import Settings
+        from ksp_cip.infrastructure.catalyst.datastore import (
+            ZCQL_PAGE_SIZE, CatalystDataStore,
+        )
+
+        store = CatalystDataStore(Settings(catalyst_project_id="p"), auth=object())
+        seen: list[str] = []
+
+        def fake_zcql(statement, qualified=None):
+            seen.append(statement)
+            return [{"a": 1}] * ZCQL_PAGE_SIZE if len(seen) == 1 else [{"a": 1}] * 50
+
+        monkeypatch.setattr(store, "_zcql", fake_zcql)
+        rows = store.query("SELECT a FROM t LIMIT 0, 350")
+        assert len(rows) == 350
+        for statement in seen:
+            requested = int(statement.rsplit(",", 1)[1].strip())
+            assert requested <= ZCQL_PAGE_SIZE

@@ -242,9 +242,20 @@ def _expand_alias_references(statement: str, expressions: dict[str, str]) -> str
                   rewrite, statement, flags=re.IGNORECASE)
 
 
-#: A caller's own trailing `LIMIT n [OFFSET m]`, in SQLite's spelling.
+#: A caller's own trailing LIMIT, in either spelling.
+#:
+#: SQLite's `LIMIT n [OFFSET m]` is what the repositories write. ZCQL's own
+#: `LIMIT offset, count` is accepted too, because it is the form the adapter
+#: emits and the form anyone reading ZCQL examples will reach for -- and left
+#: unparsed it slips past the pager to be rejected live with "ZCQL CANNOT HAVE
+#: MORE THAN 300 ROWS in LIMIT" whenever the count exceeds a page.
 _TRAILING_LIMIT_RE = re.compile(
-    r"\s+LIMIT\s+(?P<limit>\d+)(?:\s+OFFSET\s+(?P<offset>\d+))?\s*$", re.IGNORECASE)
+    r"\s+LIMIT\s+(?:"
+    r"(?P<offset2>\d+)\s*,\s*(?P<limit2>\d+)"          # ZCQL: LIMIT offset, count
+    r"|(?P<limit>\d+)(?:\s+OFFSET\s+(?P<offset>\d+))?"  # SQLite: LIMIT n [OFFSET m]
+    r")\s*$",
+    re.IGNORECASE,
+)
 
 
 def _split_limit(statement: str) -> tuple[str, int | None, int]:
@@ -263,8 +274,12 @@ def _split_limit(statement: str) -> tuple[str, int | None, int]:
     match = _TRAILING_LIMIT_RE.search(statement)
     if not match:
         return statement, None, 0
-    limit = int(match.group("limit"))
-    offset = int(match.group("offset") or 0)
+    if match.group("limit2") is not None:
+        limit = int(match.group("limit2"))
+        offset = int(match.group("offset2") or 0)
+    else:
+        limit = int(match.group("limit"))
+        offset = int(match.group("offset") or 0)
     return statement[: match.start()], limit, offset
 
 
