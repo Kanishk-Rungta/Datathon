@@ -628,6 +628,31 @@ _Composite primary key: ActCode, SectionCode -- see note above._
 | is_extension | Bigint | - | Y | - |
 | created_at | Text | - | Y | - |
 
+### `ext_socioeconomic_indicator`  (20 columns)
+
+| Column | Type | Max Len | Mandatory | Unique |
+|---|---|---|---|---|
+| indicator_id | VarChar | 255 | Y | Y |
+| district_id | Bigint | - | Y | - |
+| district_name | Text | - | Y | - |
+| census_year | Bigint | - | Y | - |
+| population | Bigint | - | - | - |
+| literacy_rate | Double | - | - | - |
+| male_literacy | Double | - | - | - |
+| female_literacy | Double | - | - | - |
+| urbanization_percent | Double | - | - | - |
+| sex_ratio | Bigint | - | - | - |
+| population_density | Bigint | - | - | - |
+| unemployment_rate | Double | - | - | - |
+| poverty_headcount | Double | - | - | - |
+| migration_inflow_rate | Double | - | - | - |
+| sc_st_percent | Double | - | - | - |
+| per_capita_income_index | Double | - | - | - |
+| data_source | Text | - | Y | - |
+| data_quality | Text | - | Y | - |
+| is_extension | Bigint | - | Y | - |
+| created_at | Text | - | Y | - |
+
 ### `raw_record`  (7 columns)
 
 | Column | Type | Max Len | Mandatory | Unique |
