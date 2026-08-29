@@ -11,6 +11,8 @@
   ],
   "functions": {
     "source": "dist",
-    "targets": ["cip-refresh"]
+    "targets": [
+      "cip_refresh"
+    ]
   }
 }

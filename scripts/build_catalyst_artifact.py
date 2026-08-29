@@ -43,6 +43,7 @@ TARGETS = {
         "source_dir": REPO_ROOT / "catalyst" / "appsail" / "api",
         "entrypoint": "server.py",
         "extra_files": ["app-config.json", "requirements.txt"],
+        "takes_deploy_env": True,
         # Imported by name before any application code runs. Missing vendored
         # copies of these are what made the first live deploy crash.
         "vendor_required": ("uvicorn", "fastapi", "pydantic", "pydantic_settings"),
@@ -53,6 +54,7 @@ TARGETS = {
         "source_dir": REPO_ROOT / "catalyst" / "functions" / "cip_refresh",
         "entrypoint": "main.py",
         "extra_files": ["catalyst-config.json", "requirements.txt"],
+        "takes_deploy_env": True,
         # Deliberately no fastapi/uvicorn: this function never imports
         # ksp_cip.interface.api, which is why its requirements.txt is shorter
         # than the API's.
@@ -70,6 +72,15 @@ TARGETS = {
         "source_dir": REPO_ROOT / "catalyst" / "appsail" / "console",
         "entrypoint": "server.js",
         "extra_files": ["app-config.json", "package.json"],
+        # No deploy.env injection. server.js is a static file server plus an
+        # /api proxy; the only variable it reads is CIP_API_URL, which is not a
+        # secret and is committed in its own app-config.json. Injection used to
+        # run for any target with an app-config.json, which handed the console
+        # service all ten KSPCIP_ variables -- the Catalyst OAuth client secret,
+        # the refresh token and the JWT signing secret included. Nothing in
+        # server.js reads them, so that was pure blast radius: two deployed
+        # services holding the project's credentials instead of one.
+        "takes_deploy_env": False,
     },
 }
 
@@ -336,7 +347,7 @@ def build(target: str, output: Path, *, python_executable: str, check_only: bool
             if src.exists():
                 shutil.copy2(src, output / extra)
 
-        if (output / "app-config.json").exists():
+        if spec.get("takes_deploy_env") and (output / "app-config.json").exists():
             inject_deploy_secrets(output / "app-config.json")
 
     if is_python:
@@ -364,7 +375,11 @@ def main() -> int:
                         help="Re-verify an already-built staging directory without re-copying")
     args = parser.parse_args()
 
-    output = args.output or (REPO_ROOT / "dist" / f"cip-{args.target}")
+    # Resolved, not used as given: verify_self_contained runs the staged
+    # import check with cwd set to the staging directory, so a relative
+    # --output resolves against itself there and the check fails with a
+    # bare "No module named 'ksp_cip'" that looks like a packaging fault.
+    output = (args.output or (REPO_ROOT / "dist" / f"cip-{args.target}")).resolve()
     build(args.target, output, python_executable=args.python, check_only=args.check_only)
     return 0
 
