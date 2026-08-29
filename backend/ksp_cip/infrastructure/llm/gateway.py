@@ -82,6 +82,13 @@ class LLMGatewayImpl:
             raise ProviderError(f"Unknown LLM provider '{name}'", provider=name)
         if settings.llm_provider is LLMProviderName.LOCAL:
             return LocalDeterministicProvider()
+        if settings.llm_provider is LLMProviderName.QUICKML:
+            # QuickML authenticates with a refreshed Catalyst OAuth token, not
+            # a static key, so it takes Settings rather than the api_key/model
+            # tuple the other HTTP providers share.
+            from .providers import CatalystQuickMLProvider
+
+            return CatalystQuickMLProvider(settings=settings)
         return provider_cls(  # type: ignore[call-arg]
             api_key=settings.llm_api_key,
             model=settings.llm_model,

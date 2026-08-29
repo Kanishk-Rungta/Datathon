@@ -94,6 +94,7 @@ class LLMProviderName(StrEnum):
     """
 
     LOCAL = "local"
+    QUICKML = "quickml"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
     GROQ = "groq"
@@ -149,6 +150,10 @@ class Settings(BaseSettings):
     catalyst_cache_ttl_seconds: int = 3600
     #: Issuer/audience a Catalyst Authentication token must declare. Left unset
     #: locally; required before the Catalyst identity backend will start.
+    #: QuickML LLM serving. The org id travels as the CATALYST-ORG header;
+    #: the model is the deployed endpoint's model name.
+    catalyst_org_id: str | None = None
+    catalyst_quickml_model: str = "crm-di-glm47b_30b_it"
     catalyst_auth_issuer: str | None = None
     catalyst_auth_audience: str | None = None
 
@@ -292,7 +297,20 @@ class Settings(BaseSettings):
                 "(the URL of the speech service you host)"
             )
 
-        if self.llm_provider is not LLMProviderName.LOCAL and not self.llm_api_key:
+        if self.llm_provider is LLMProviderName.QUICKML:
+            # QuickML authenticates with the project's Catalyst OAuth
+            # credentials, not a standalone API key, and addresses the endpoint
+            # by project id. Demanding KSPCIP_LLM_API_KEY here would report a
+            # missing setting that this provider never reads.
+            if not self.catalyst_project_id:
+                problems.append("KSPCIP_CATALYST_PROJECT_ID must be set for the QuickML provider")
+            if not (self.catalyst_oauth_client_id and self.catalyst_oauth_client_secret
+                    and self.catalyst_oauth_refresh_token):
+                problems.append(
+                    "Catalyst OAuth credentials must be set for the QuickML provider "
+                    "(it uses a refreshed access token, not KSPCIP_LLM_API_KEY)"
+                )
+        elif self.llm_provider is not LLMProviderName.LOCAL and not self.llm_api_key:
             problems.append(f"KSPCIP_LLM_API_KEY must be set for the '{self.llm_provider}' provider")
 
         if self.environment is not Environment.LOCAL and self.jwt_secret == "dev-only-secret-change-me":

@@ -196,12 +196,90 @@ class GroqProvider(OpenAICompatibleProvider):
     default_base_url = "https://api.groq.com/openai/v1"
 
 
+class CatalystQuickMLProvider(BaseProvider):
+    """Catalyst QuickML LLM serving — the mandated provider for text LLMs.
+
+    The request body is OpenAI-shaped (``model``/``messages``/``max_tokens``/
+    ``temperature``), so the translation here is thin. What is *not* shared
+    with the other HTTP providers is authentication: QuickML takes a Catalyst
+    OAuth access token, refreshed from the same credentials the Data Store
+    uses, rather than a static API key. It is therefore constructed from
+    ``Settings`` instead of an ``api_key`` string.
+
+    Endpoint (confirmed against the project's own console sample)::
+
+        POST {base}/quickml/v1/project/{project_id}/glm/chat
+        Authorization: Zoho-oauthtoken <access token>
+        CATALYST-ORG: <org id>
+
+    Requires the ``QuickML.deployment.READ`` OAuth scope. Without it the
+    endpoint answers ``401 INVALID_OAUTHSCOPE`` for either Authorization
+    spelling, which is a credential problem and not a contract problem.
+
+    ADR-0003 still holds: this provider phrases, it never supplies a figure. A
+    failure here degrades wording, never facts, because the gateway swallows
+    provider errors and the deterministic draft has already been composed.
+    """
+
+    name = "quickml"
+
+    def __init__(self, *, settings: Any, auth: Any = None) -> None:
+        self._settings = settings
+        self._model = settings.llm_model or settings.catalyst_quickml_model
+        self._timeout = settings.llm_timeout_seconds
+        if auth is None:
+            from ..catalyst.datastore import CatalystAuth
+
+            auth = CatalystAuth(settings)
+        self._auth = auth
+
+    def _url(self) -> str:
+        base = (self._settings.llm_base_url or self._settings.catalyst_base_url).rstrip("/")
+        return f"{base}/quickml/v1/project/{self._settings.catalyst_project_id}/glm/chat"
+
+    def invoke(self, *, system: str, messages: Sequence[Mapping[str, str]], max_tokens: int, temperature: float) -> str:
+        import httpx
+
+        payload_messages = [{"role": "system", "content": system}]
+        payload_messages.extend({"role": m["role"], "content": m["content"]} for m in messages)
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Zoho-oauthtoken {self._auth.token()}",
+        }
+        org = getattr(self._settings, "catalyst_org_id", None)
+        if org:
+            headers["CATALYST-ORG"] = str(org)
+        try:
+            response = httpx.post(
+                self._url(),
+                headers=headers,
+                json={
+                    "model": self._model,
+                    "messages": payload_messages,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "stream": False,
+                },
+                timeout=self._timeout,
+            )
+            response.raise_for_status()
+            data = response.json()
+        except Exception as exc:  # noqa: BLE001 - adapter boundary
+            raise ProviderError(f"{self.name} call failed: {exc}", provider=self.name) from exc
+
+        choices = data.get("choices") or []
+        if not choices:
+            return ""
+        return (choices[0].get("message", {}).get("content") or "").strip()
+
+
 PROVIDER_REGISTRY: dict[str, type[BaseProvider]] = {
     LocalDeterministicProvider.name: LocalDeterministicProvider,
     AnthropicProvider.name: AnthropicProvider,
     GeminiProvider.name: GeminiProvider,
     GroqProvider.name: GroqProvider,
     OpenAICompatibleProvider.name: OpenAICompatibleProvider,
+    CatalystQuickMLProvider.name: CatalystQuickMLProvider,
 }
 
 
