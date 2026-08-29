@@ -21,7 +21,11 @@ from ..application.agents import (
     NetworkIntelligenceAgent,
     SupervisorAgent,
 )
-from ..application.analytics import AnalyticsEngine
+from ..application.analytics import (
+    AnalyticsEngine,
+    SocioEconomicCorrelator,
+    SpatioTemporalForecaster,
+)
 from ..application.graph import EntityResolver, FinancialAnalyzer, GraphBuilder, GraphService
 from ..application.nlu import NLUEngine
 from ..application.pipeline import DataQualitySuite, IntelligenceRefresher, SeedPipeline
@@ -54,6 +58,7 @@ from ..infrastructure.db.repositories import (
     IdentityRepository,
     PriorityRepository,
     ReferenceRepository,
+    SocioEconomicRepository,
     UserRepository,
 )
 from ..infrastructure.db.sqlite_store import SQLiteDataStore
@@ -91,6 +96,7 @@ class Container:
     audit_repository: AuditRepository
     control: ControlRepository
     events: EventCalendarRepository
+    socioeconomic_repository: SocioEconomicRepository
 
     # services
     audit: AuditService
@@ -108,6 +114,10 @@ class Container:
     # application
     llm: Any
     engine: AnalyticsEngine
+    #: Read directly by the analytics router, which is why they are fields
+    #: here and not only constructor arguments to CrimeAnalyticsAgent.
+    socioeconomic_correlator: SocioEconomicCorrelator
+    spatiotemporal_forecaster: SpatioTemporalForecaster
     graph: GraphService
     retrieval: RetrievalService
     nlu: NLUEngine
@@ -186,6 +196,7 @@ def build_container(settings: Settings | None = None) -> Container:
     audit_repository = AuditRepository(store)
     control = ControlRepository(store)
     events = EventCalendarRepository(store)
+    socioeconomic_repository = SocioEconomicRepository(store)
     kv = _build_kv(settings, store)
     cache = _build_cache(settings)
 
@@ -210,7 +221,11 @@ def build_container(settings: Settings | None = None) -> Container:
         early_warning_sigma=settings.early_warning_sigma,
         early_warning_min_baseline=settings.early_warning_min_baseline,
     )
-    graph = GraphService(graph_repository)
+    socioeconomic_correlator = SocioEconomicCorrelator(analytics, socioeconomic_repository)
+    spatiotemporal_forecaster = SpatioTemporalForecaster(
+        analytics, grid_metres=settings.hotspot_grid_metres
+    )
+    graph = _build_graph(settings, graph_repository)
     embedding_model = HashedNgramEmbeddingModel(
         dimensions=settings.embedding_dimensions, model_name=settings.embedding_model_name
     )
@@ -224,7 +239,18 @@ def build_container(settings: Settings | None = None) -> Container:
         audit, cases, reference, retrieval, authorization,
         default_page_size=settings.default_case_page_size,
     )
-    crime_analytics = CrimeAnalyticsAgent(audit, engine, analytics, reference, hotspots, alerts, authorization)
+    # All three optional dependencies are supplied. Left at their None
+    # defaults the agent still answers, but degrades silently: spatial
+    # forecasting reports itself "not enabled on this deployment",
+    # organised-activity alerting returns nothing, and socio-economic
+    # correlation rebuilds its own correlator per call from a private
+    # repository attribute.
+    crime_analytics = CrimeAnalyticsAgent(
+        audit, engine, analytics, reference, hotspots, alerts, authorization,
+        correlator=socioeconomic_correlator,
+        spatiotemporal_forecaster=spatiotemporal_forecaster,
+        graph=graph,
+    )
     analyzer = FinancialAnalyzer()
     network_intelligence = NetworkIntelligenceAgent(
         audit, graph, identities, cases, financial, analyzer, authorization
@@ -270,10 +296,14 @@ def build_container(settings: Settings | None = None) -> Container:
         graph_repository=graph_repository, embeddings=embeddings, identities=identities,
         hotspots=hotspots, alerts=alerts, priority=priority, financial=financial,
         users=users, conversations=conversations, audit_repository=audit_repository,
-        control=control, events=events, audit=audit, authorization=authorization,
+        control=control, events=events,
+        socioeconomic_repository=socioeconomic_repository,
+        audit=audit, authorization=authorization,
         identity_service=identity_service, identity_provider=identity_provider,
         cache=cache, memory=memory, language=language,
-        composer=composer, pdf=pdf, llm=llm, engine=engine, graph=graph,
+        composer=composer, pdf=pdf, llm=llm, engine=engine,
+        socioeconomic_correlator=socioeconomic_correlator,
+        spatiotemporal_forecaster=spatiotemporal_forecaster, graph=graph,
         retrieval=retrieval, nlu=nlu, supervisor=supervisor,
         data_retrieval=data_retrieval, crime_analytics=crime_analytics,
         network_intelligence=network_intelligence, investigation_support=investigation_support,
@@ -351,6 +381,39 @@ def _build_cache(settings: Settings) -> Any:
     from ..infrastructure.catalyst.cache import InProcessCache
 
     return InProcessCache()
+
+
+def _build_graph(settings: Settings, repository: GraphRepository) -> Any:
+    """Return the graph engine named by ``KSPCIP_GRAPH_BACKEND``.
+
+    Both classes expose the same method signatures, so nothing downstream of
+    here knows which one it got. That parity is the whole point: the choice is
+    an environment variable, not a code change.
+
+    This existing *only as a setting* was a defect, not a gap. ``build_container``
+    constructed ``GraphService`` unconditionally, so ``KSPCIP_GRAPH_BACKEND=neo4j``
+    changed nothing -- while ``/capabilities`` reads ``settings.graph_backend``
+    directly and would have announced "Graph traversal runs against Neo4j" over a
+    NetworkX deployment. The one field whose job is to disclose the in-memory
+    limitation would have stated its opposite.
+
+    ``Neo4jGraphAdapter`` falls back to NetworkX by itself when the driver is
+    missing or the database is unreachable, so selecting ``neo4j`` degrades
+    rather than failing to boot. The import stays inside the branch because the
+    ``neo4j`` driver is not a deployment dependency.
+    """
+    from ..config.settings import GraphBackend
+
+    if settings.graph_backend is GraphBackend.NEO4J:
+        from ..infrastructure.graph.neo4j import Neo4jGraphAdapter
+
+        return Neo4jGraphAdapter(
+            repository,
+            uri=settings.neo4j_uri,
+            user=settings.neo4j_user,
+            password=settings.neo4j_password,
+        )
+    return GraphService(repository)
 
 
 def _build_identity(settings: Settings, users: UserRepository, authorization: AuthorizationService,
