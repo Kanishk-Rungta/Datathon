@@ -84,6 +84,22 @@ class TestConversationMemory:
         assert second.intent is Intent.INVESTIGATION_SUMMARY
         assert second.evidence
 
+    def test_a_pronoun_after_an_offender_list_resolves_to_that_person(self, container, investigator):
+        """"How is *he* connected?" must reach the person's ego network.
+
+        The offender-profile result used to publish only identity_ids and
+        case_master_ids, so no person name was pinned; the pronoun fell
+        through to the case branch and answered with an out-of-scope FIR
+        error instead of a link graph.
+        """
+        session = "offender-pronoun-session"
+        first = ask(container, investigator, "Who are the repeat offenders?", session)
+        assert first.intent is Intent.OFFENDER_PROFILE
+        second = ask(container, investigator, "How is he connected to others?", session)
+        assert second.intent is Intent.NETWORK_QUERY
+        assert "not available within your authorized scope" not in second.answer_text
+        assert second.evidence
+
     def test_the_transcript_is_persisted(self, container, analyst):
         session = "transcript-session"
         ask(container, analyst, "What is the crime trend this year?", session)
@@ -140,6 +156,7 @@ class TestInvestigationSupport:
         assert answer.payload.payload_type == "timeline"
         assert answer.payload.data["events"]
         assert row["CrimeNo"] in answer.answer_text
+        assert "None §None" not in answer.answer_text
 
     def test_the_priority_indicator_is_fully_decomposed(self, container, analyst):
         row = container.store.query(

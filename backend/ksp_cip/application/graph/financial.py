@@ -152,7 +152,33 @@ class FinancialSummary:
     amount_bands: list[AmountBand] = field(default_factory=list)
     bursts: list[TemporalBurst] = field(default_factory=list)
     positions: list[NetworkPosition] = field(default_factory=list)
+    #: True when any contributing row is a platform extension rather than
+    #: source record data. Derived from the rows (see :func:`rows_are_extension`),
+    #: never assumed — the default only covers a summary built from no rows at
+    #: all, where labelling is the safe answer.
     is_extension: bool = True
+
+
+def rows_are_extension(*row_groups: Sequence[dict[str, Any]] | None) -> bool:
+    """Whether an aggregate over these rows must carry the extension marker.
+
+    ``ext_financial_transaction`` declares an ``is_extension`` column, so the
+    marker is a property of the data, not a constant. Every row is synthetic in
+    this build, but hard-coding that meant a future approved ingestion would
+    still have been labelled "(synthetic extension)" — and, worse, that the
+    column the schema already defines was never read.
+
+    The rule is deliberately one-directional: an aggregate is an extension if
+    *any* contributing row is. Mixing one synthetic row into real data does not
+    produce a real total, so the marker survives the mix. A missing column reads
+    as an extension, because an unlabelled row is not evidence of provenance.
+    """
+    for rows in row_groups:
+        for row in rows or ():
+            flag = row.get("is_extension", 1)
+            if flag is None or bool(int(flag)):
+                return True
+    return False
 
 
 class FinancialAnalyzer:
@@ -241,6 +267,7 @@ class FinancialAnalyzer:
             amount_bands=self.amount_distribution(transactions),
             bursts=self.temporal_bursts(network),
             positions=self.network_positions(network),
+            is_extension=rows_are_extension(transactions, network),
         )
 
     def detect_patterns(self, transactions: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:

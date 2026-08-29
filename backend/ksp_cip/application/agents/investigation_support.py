@@ -103,7 +103,7 @@ class InvestigationSupportAgent(BaseAgent):
         ]
         if act_sections:
             rendered = ", ".join(
-                f"{row.get('ShortName') or row.get('ActCode')} §{row.get('SectionCode')}"
+                f"{row.get('ShortName') or row.get('ActID')} §{row.get('SectionID')}"
                 for row in act_sections[:6]
             )
             claims.append(claim(f"Charges are framed under {rendered}.", [base]))

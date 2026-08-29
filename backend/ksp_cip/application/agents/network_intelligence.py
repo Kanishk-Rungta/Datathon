@@ -33,6 +33,7 @@ from ..graph.financial import (
     CONCENTRATION_PERCENTILE,
     MIN_ACCOUNTS_FOR_CONCENTRATION,
     STRUCTURING_THRESHOLD,
+    rows_are_extension,
 )
 from ..services.audit import AuditService, audited
 from ..services.authorization import AuthorizationService
@@ -190,9 +191,24 @@ class NetworkIntelligenceAgent(BaseAgent):
             ))
 
         if expansion.trimmed_by_scope:
+            # This states a computed number, so it needs a locator like any
+            # other numeric claim — otherwise the composer suppresses the whole
+            # answer (EvidenceMissingError). The withheld links themselves are
+            # deliberately not disclosed: naming them would defeat the scope
+            # trim this claim is reporting, so the evidence carries the count
+            # and the basis, not the records.
+            trimmed_item = aggregate_evidence(
+                key=f"graph_scope_trim:{seed}:{hops}",
+                label=f"{expansion.trimmed_by_scope} link(s) outside the caller's unit scope",
+                case_master_ids=[],
+                detail={"withheld_by_scope": expansion.trimmed_by_scope, "hops": hops,
+                        "basis": "links traversing police stations outside the authorized unit subtree"},
+            )
+            evidence_items.append(trimmed_item)
             claims.append(claim(
                 f"{expansion.trimmed_by_scope} link(s) were withheld because they run through police stations "
-                "outside your authorized scope."
+                "outside your authorized scope.",
+                [trimmed_item], provenance=Provenance.DETERMINISTIC_COMPUTATION,
             ))
         claims.append(claim(
             "Links are derived from shared FIR records, not from any confirmed association. Co-accused in one "
@@ -431,7 +447,7 @@ class NetworkIntelligenceAgent(BaseAgent):
                 f"{len(records)} person(s) in your scope are named as accused in more than one FIR.",
                 provenance=Provenance.DETERMINISTIC_COMPUTATION,
             ))
-        for record in records[:8]:
+        for record in records:
             identity = self._identities.identity(str(record["identity_id"])) or {}
             item = person_evidence(
                 identity_id=str(record["identity_id"]),
@@ -495,6 +511,11 @@ class NetworkIntelligenceAgent(BaseAgent):
                 ),
             ),
             data={"identity_ids": [r["identity_id"] for r in records],
+                  # Publish the names so the supervisor can pin them for anaphora.
+                  # Without this, "how is *he* connected?" after an offender list
+                  # found no person referent and fell through to the case branch,
+                  # answering with an out-of-scope FIR error instead.
+                  "person_names": [str(r["canonical_name"]) for r in records][:10],
                   "case_master_ids": [int(c) for r in records for c in r.get("case_ids", [])][:200]},
         )
 
@@ -591,7 +612,8 @@ class NetworkIntelligenceAgent(BaseAgent):
             txn_id=str(transactions[0]["txn_id"]),
             label=f"{len(transactions)} transaction(s) across the synthetic financial extension",
             case_master_ids=sorted({int(t["case_master_id"]) for t in transactions if t.get("case_master_id")})[:200],
-            detail={"transactions": len(transactions), "is_extension": True},
+            detail={"transactions": len(transactions),
+                    "is_extension": rows_are_extension(transactions)},
         )]
 
         claims = [claim(
@@ -648,7 +670,7 @@ class NetworkIntelligenceAgent(BaseAgent):
                         [c.label, c.direction, str(c.counterparty_count), f"{c.total_amount:,.0f}"]
                         for c in concentrations[:10]
                     ],
-                    "is_extension": True,
+                    "is_extension": rows_are_extension(transactions),
                 },
             ),
             warnings=["Financial data is a synthetic extension, not source FIR data."],
@@ -721,7 +743,7 @@ class NetworkIntelligenceAgent(BaseAgent):
                 label=f"{len(transactions)} transaction(s) recorded against {subject_label}",
                 case_master_ids=summary.case_ids,
                 detail={"txn_ids": [str(t["txn_id"]) for t in transactions[:50]],
-                        "is_extension": True},
+                        "is_extension": summary.is_extension},
             )
         ]
         claims = [
@@ -845,7 +867,7 @@ class NetworkIntelligenceAgent(BaseAgent):
                         [f.label, f.kind, str(f.txn_count), f"{f.received:,.0f}", f"{f.sent:,.0f}", f"{f.net:,.0f}"]
                         for f in summary.counterparties
                     ],
-                    "is_extension": True,
+                    "is_extension": summary.is_extension,
                 },
             ),
             warnings=["Financial data is a synthetic extension, not source FIR data."],

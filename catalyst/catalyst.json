@@ -43,5 +43,19 @@
   },
   "circuits": [
     { "name": "cip_nightly", "source": "circuits/nightly.json" }
+  ],
+  "cron": [
+    {
+      "name": "cip_nightly_trigger",
+      "schedule_point": "circuit",
+      "target": "cip_nightly",
+      "schedule_type": "recursive",
+      "repetition": "daily",
+      "time": "02:00",
+      "timezone": "Asia/Kolkata",
+      "input": {},
+      "description": "Invokes the cip_nightly Circuit once a day. A Circuit has no schedule of its own; Cron is the component that triggers it.",
+      "comment": "VERIFIED from the Catalyst Cron docs: a cron's schedule point may be a function, a third-party URL, or a Circuit; schedule types are One Time and Recursive; the minimum recursive frequency is one hour (daily is well inside that). NOT VERIFIED: the exact console/CLI field names below -- Cron is created through the console or CLI and Zoho does not publish a committed-file schema for it, so treat this block as the reviewed provisioning intent (what to create, with which schedule and target), not as a file the CLI ingests. Record the real field names here once the cron is created against a live project."
+    }
   ]
 }

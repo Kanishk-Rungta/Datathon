@@ -464,6 +464,7 @@ class TestExport:
         response = client.get(payload["url"], headers=auth(tokens, "analyst"))
         assert response.status_code == 200
         assert response.content[:4] == b"%PDF"
+        assert payload["bytes"] == len(response.content)
 
     def test_a_user_cannot_read_another_users_export(self, client, tokens):
         client.post("/api/v1/chat", headers=auth(tokens, "analyst"),
