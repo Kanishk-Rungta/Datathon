@@ -13,6 +13,27 @@ from typing import Any
 from ....domain.ports import DataStore
 
 
+
+def _same_id(left: Any, right: Any) -> bool:
+    """Compare two ids that may not share a Python type.
+
+    The Catalyst Data Store returns every column as a string, so a cached
+    ``UnitID`` of ``"2023"`` never equals the ``2023`` a caller holds. That
+    made ``unit()`` and ``district()`` return None on Catalyst while working on
+    SQLite -- a scoped officer's console read "no unit assigned" instead of
+    their station, and hotspot cells lost their district label. Authorization
+    itself was unaffected (the unit-subtree predicate is built from the closure
+    table, not from this lookup), but the label it shows the caller was wrong,
+    which is its own kind of failure on a screen about who can see what.
+    """
+    if left is None or right is None:
+        return False
+    try:
+        return int(left) == int(right)
+    except (TypeError, ValueError):
+        return str(left) == str(right)
+
+
 class ReferenceRepository:
     _CACHEABLE = {
         "districts": "SELECT DistrictID, DistrictName, StateID, Active FROM curated_District ORDER BY DistrictName",
@@ -101,10 +122,10 @@ class ReferenceRepository:
         return self._cached("courts")
 
     def unit(self, unit_id: int) -> dict[str, Any] | None:
-        return next((u for u in self.units() if u["UnitID"] == unit_id), None)
+        return next((u for u in self.units() if _same_id(u["UnitID"], unit_id)), None)
 
     def district(self, district_id: int) -> dict[str, Any] | None:
-        return next((d for d in self.districts() if d["DistrictID"] == district_id), None)
+        return next((d for d in self.districts() if _same_id(d["DistrictID"], district_id)), None)
 
     def sections_for_act(self, act_code: str) -> list[dict[str, Any]]:
         return self._store.query(
