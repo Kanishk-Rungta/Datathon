@@ -103,7 +103,21 @@ class GraphService:
             # are only visible when at least one case behind them is in scope,
             # which the caller establishes by seeding from an in-scope node.
             return True
-        return any(unit_id in scope.unit_ids for unit_id in unit_ids)
+        # Coerced rather than compared directly: scope.unit_ids holds ints, and
+        # an edge built while running on the Catalyst Data Store carries its
+        # unit ids as strings, because that backend returns every column as a
+        # string. Comparing the two silently trimmed every edge as
+        # out-of-scope -- failing closed, so nothing leaked, but a scoped
+        # officer would have seen an empty graph with no explanation.
+        allowed = scope.unit_ids
+        for unit_id in unit_ids:
+            try:
+                if int(unit_id) in allowed:
+                    return True
+            except (TypeError, ValueError):
+                if unit_id in allowed:
+                    return True
+        return False
 
     def expand(
         self,

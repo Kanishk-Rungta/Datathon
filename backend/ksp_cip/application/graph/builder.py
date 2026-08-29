@@ -217,7 +217,7 @@ class GraphBuilder:
                         dst_type=NodeType.LOCATION, dst_id=node,
                         edge_type=EdgeType.SAME_LOCATION, weight=1.0,
                         case_ids=[int(row["CaseMasterID"])],
-                        unit_ids=[row["PoliceStationID"]] if row.get("PoliceStationID") else (),
+                        unit_ids=[int(row["PoliceStationID"])] if row.get("PoliceStationID") else (),
                         detail={"basis": f"incident coordinates fall in the same ~{LOCATION_GRID_METRES} m grid cell",
                                 "grid_metres": LOCATION_GRID_METRES},
                     )
