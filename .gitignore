@@ -24,3 +24,12 @@ backend/var/filestore/audio/
 # Deployment secrets (OAuth client/refresh token) merged into the built
 # artifact by scripts/build_catalyst_artifact.py. Never commit this.
 catalyst/deploy.env
+
+# Real credentials. Settings reads <repo>/.env (not backend/.env), and both
+# paths have been used, so ignore either. .env.example stays tracked.
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example

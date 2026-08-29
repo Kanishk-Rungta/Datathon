@@ -116,7 +116,7 @@ class AI4BharatLanguageService:
             LOGGER.error("ai4bharat_http_error", extra={"status": exc.code, "path": path})
             raise ProviderError(
                 "AI4Bharat speech service returned an error",
-                provider=self.provider_name, status=exc.code, detail=detail,
+                provider=self.provider_name, status=exc.code, response_detail=detail,
             ) from exc
         except urllib_error.URLError as exc:
             raise ProviderError(

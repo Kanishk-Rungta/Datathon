@@ -180,7 +180,7 @@ class TestQueryPagination:
 
         store = CatalystDataStore(Settings(catalyst_project_id="p"), auth=object())
         seen: list[str] = []
-        monkeypatch.setattr(store, "_zcql", lambda statement: seen.append(statement) or [])
+        monkeypatch.setattr(store, "_zcql", lambda statement, qualified=None: seen.append(statement) or [])
         store.query("SELECT * FROM t LIMIT :limit OFFSET :offset", {"limit": 25, "offset": 10})
         assert len(seen) == 1
         assert seen[0].count("LIMIT") == 1
@@ -193,7 +193,7 @@ class TestQueryPagination:
         store = CatalystDataStore(Settings(catalyst_project_id="p"), auth=object())
         seen: list[str] = []
 
-        def fake_zcql(statement):
+        def fake_zcql(statement, qualified=None):
             seen.append(statement)
             return [{"a": 1}] * ZCQL_PAGE_SIZE if len(seen) == 1 else []
 
@@ -209,7 +209,7 @@ class TestExecuteRowcount:
         from ksp_cip.infrastructure.catalyst.datastore import CatalystDataStore
 
         store = CatalystDataStore(Settings(catalyst_project_id="p"), auth=object())
-        monkeypatch.setattr(store, "_zcql", lambda statement: [{"a": 1}, {"a": 2}])
+        monkeypatch.setattr(store, "_zcql", lambda statement, qualified=None: [{"a": 1}, {"a": 2}])
         assert store.execute("UPDATE t SET a = 1 WHERE b = :b", {"b": 1}) == 2
 
 
@@ -232,3 +232,63 @@ class TestUnsupportedOperations:
                "no multi-row transaction primitive" in (store.transaction.__doc__ or "")
         with store.transaction():
             pass
+
+
+class TestQualifiedAliasCollision:
+    """Two joined tables selecting the SAME column must stay distinguishable.
+
+    intel.py::review_queue does exactly this:
+        SELECT l.*, la.AccusedName AS left_name, ra.AccusedName AS right_name
+        FROM cip_entity_resolution_link l
+        LEFT JOIN curated_Accused la ...  LEFT JOIN curated_Accused ra ...
+
+    Both aliases normalise to `AccusedName`, so a flatten-then-rekey strategy
+    keeps only the last. Confirmed against a live project on 2026-08-30: the
+    adapter returned right_name and dropped left_name entirely, showing the
+    reviewer one name where the wire carried two different people. That screen
+    is where a human approves an identity merge, so losing a side is not
+    cosmetic.
+
+    ZCQL namespaces the response by table alias, which is what makes this
+    recoverable.
+    """
+
+    def _store(self):
+        from ksp_cip.config import Settings
+        from ksp_cip.infrastructure.catalyst.datastore import CatalystDataStore
+
+        return CatalystDataStore(Settings(catalyst_project_id="p"), auth=object())
+
+    def test_qualified_aliases_are_keyed_by_table_and_column(self):
+        from ksp_cip.infrastructure.catalyst.datastore import _translate_aggregates
+
+        _, _, qualified = _translate_aggregates(
+            "SELECT la.AccusedName AS left_name, ra.AccusedName AS right_name FROM x"
+        )
+        assert qualified == {
+            ("la", "AccusedName"): "left_name",
+            ("ra", "AccusedName"): "right_name",
+        }
+
+    def test_both_sides_survive_the_flatten(self, monkeypatch):
+        store = self._store()
+        entry = {
+            "l": {"link_id": "abc"},
+            "la": {"AccusedName": "Sowmya Qureshi"},
+            "ra": {"AccusedName": "N. Prema Qureshi"},
+        }
+        monkeypatch.setattr(store, "_call", lambda *a, **k: {"data": [entry]})
+        rows = store.query(
+            "SELECT l.link_id, la.AccusedName AS left_name, ra.AccusedName AS right_name FROM t"
+        )
+        assert rows[0]["left_name"] == "Sowmya Qureshi"
+        assert rows[0]["right_name"] == "N. Prema Qureshi"
+
+    def test_an_expression_alias_still_works(self, monkeypatch):
+        """The unqualified path must keep working alongside the qualified one."""
+        store = self._store()
+        monkeypatch.setattr(
+            store, "_call", lambda *a, **k: {"data": [{"t": {"COUNT(ROWID)": 7}}]}
+        )
+        rows = store.query("SELECT COUNT(*) AS n FROM t")
+        assert rows[0]["n"] == 7

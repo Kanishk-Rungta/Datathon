@@ -174,7 +174,7 @@ def _normalise_key(expr: str) -> str:
     return re.sub(r"\s+", "", expr)            # `COUNT( ROWID )` -> `COUNT(ROWID)`
 
 
-def _translate_aggregates(statement: str) -> tuple[str, dict[str, str]]:
+def _translate_aggregates(statement: str) -> tuple[str, dict[str, str], dict[tuple[str, str], str]]:
     """Bring a SELECT into the dialect ZCQL actually accepts.
 
     Two differences, both invisible until a query runs against a live project:
@@ -199,13 +199,24 @@ def _translate_aggregates(statement: str) -> tuple[str, dict[str, str]]:
 
     aliases: dict[str, str] = {}
     expressions: dict[str, str] = {}
+    # `table.column AS alias` keyed by (table, column). Responses are namespaced
+    # by the table alias, so this survives two joined tables selecting the SAME
+    # column name -- which `aliases` above cannot, because both normalise to the
+    # bare column and the second silently overwrites the first. The ER review
+    # queue does exactly that (la.AccusedName AS left_name, ra.AccusedName AS
+    # right_name) and lost left_name entirely against a live project.
+    qualified: dict[tuple[str, str], str] = {}
     for item in _split_select_items(match.group("cols")):
         aliased = _ALIAS_RE.match(item.strip())
         if aliased:
             expr, alias = aliased.group("expr").strip(), aliased.group("alias")
-            aliases[_normalise_key(expr)] = alias
+            aliases.setdefault(_normalise_key(expr), alias)
             expressions[alias] = expr
-    return _expand_alias_references(translated, expressions), aliases
+            if "(" not in expr and expr.count(".") == 1:
+                namespace, column = (part.strip().strip('"') for part in expr.split(".", 1))
+                if namespace and column:
+                    qualified[(namespace, column)] = alias
+    return _expand_alias_references(translated, expressions), aliases, qualified
 
 
 def _expand_alias_references(statement: str, expressions: dict[str, str]) -> str:
@@ -290,7 +301,7 @@ class CatalystDataStore:
         statement = bind_named(sql, params or {})
         if statement.lstrip().upper().startswith("PRAGMA"):
             raise CIPError("PRAGMA is not available on the Catalyst Data Store", sql=statement[:120])
-        statement, aliases = _translate_aggregates(statement)
+        statement, aliases, qualified = _translate_aggregates(statement)
         statement, want, offset = _split_limit(statement)
 
         rows: list[dict[str, Any]] = []
@@ -298,7 +309,7 @@ class CatalystDataStore:
             remaining = ZCQL_PAGE_SIZE if want is None else min(ZCQL_PAGE_SIZE, want - len(rows))
             if remaining <= 0:
                 break
-            page = self._zcql(f"{statement} LIMIT {offset}, {remaining}")
+            page = self._zcql(f"{statement} LIMIT {offset}, {remaining}", qualified)
             rows.extend(_restore_aliases(page, aliases))
             if len(page) < remaining:
                 break
@@ -399,7 +410,11 @@ class CatalystDataStore:
         return list(schema_columns().get(table, []))
 
     # ---------------------------------------------------------------- HTTP
-    def _zcql(self, statement: str) -> list[dict[str, Any]]:
+    def _zcql(
+        self,
+        statement: str,
+        qualified: Mapping[tuple[str, str], str] | None = None,
+    ) -> list[dict[str, Any]]:
         body = json.dumps({"query": statement}).encode("utf-8")
         payload = self._call("POST", "/query", body)
         rows: list[dict[str, Any]] = []
@@ -408,7 +423,15 @@ class CatalystDataStore:
             for value in entry.values():
                 if isinstance(value, dict):
                     flattened.update(value)
-            rows.append(flattened or entry)
+            row = flattened or dict(entry)
+            # Resolved here, not after flattening: flattening merges every
+            # namespace into one dict, so two tables selecting the same column
+            # collapse and the first is lost.
+            for (namespace, column), alias in (qualified or {}).items():
+                scope = entry.get(namespace)
+                if isinstance(scope, Mapping) and column in scope:
+                    row[alias] = scope[column]
+            rows.append(row)
         return rows
 
     def _insert_rows(self, table: str, rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
