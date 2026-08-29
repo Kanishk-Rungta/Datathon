@@ -145,7 +145,14 @@ class SocioEconomicCorrelator:
         # Build district profiles for districts where both sides have data.
         profiles: list[DistrictCrimeProfile] = []
         for district_id, ind in indicator_by_district.items():
-            population = ind.get("population") or 0
+            # int(), not the raw value: the Catalyst Data Store returns every
+            # column as a string, so `population` arrives as "8443675" there
+            # and as an int from SQLite. Comparing the string to 0 raised
+            # TypeError and turned the whole endpoint into a 500 on Catalyst
+            # only -- which is exactly the class of defect that passes every
+            # local test. Every other field on this row is already coerced
+            # (_safe_float for the indicators, str() for the labels).
+            population = _safe_int(ind.get("population")) or 0
             if population <= 0:
                 continue  # Cannot compute a rate without a denominator.
             case_count = crime_by_district.get(district_id, 0)
@@ -272,6 +279,18 @@ def _safe_float(value: Any) -> float | None:
     try:
         v = float(value)
         return v if math.isfinite(v) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_int(value: Any) -> int | None:
+    """Return an int or None — never raises.
+
+    Tolerates the string form the Catalyst Data Store returns, and a value
+    that arrives as "8443675.0" rather than "8443675".
+    """
+    try:
+        return int(float(value))
     except (TypeError, ValueError):
         return None
 
