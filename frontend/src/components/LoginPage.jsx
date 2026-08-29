@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api.js'
+import { renderCatalystSignIn } from '../lib/catalystAuth.js'
 
 /* Demo accounts are listed openly because this is a synthetic-data build and
  * the roles are the point: the reviewer should be able to sign in as a station
@@ -11,6 +12,25 @@ export default function LoginPage({ onAuthenticated }) {
   const [demoPassword, setDemoPassword] = useState('')
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  // null = not yet decided, false = use our own form, true = Catalyst rendered.
+  const [catalystSignIn, setCatalystSignIn] = useState(null)
+
+  /* Catalyst Authentication is used only when the deployment says it is the
+   * identity backend AND its Web SDK genuinely loaded. Either condition
+   * failing leaves the credential form exactly as it was -- a reviewer must
+   * never meet a dead sign-in page because a CDN was unreachable. */
+  useEffect(() => {
+    let cancelled = false
+    api.capabilities()
+      .then(async (caps) => {
+        if (cancelled) return
+        if (caps?.identity_backend !== 'catalyst') return setCatalystSignIn(false)
+        const rendered = await renderCatalystSignIn('catalystSignInHost')
+        if (!cancelled) setCatalystSignIn(rendered)
+      })
+      .catch(() => { if (!cancelled) setCatalystSignIn(false) })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     api.demoAccounts()
@@ -49,6 +69,10 @@ export default function LoginPage({ onAuthenticated }) {
 
         {error && <div className="error-note">{error}</div>}
 
+        <div id="catalystSignInHost" hidden={catalystSignIn !== true} />
+
+        {catalystSignIn !== true && (
+        <>
         <div className="field">
           <label htmlFor="username">Username</label>
           <input id="username" value={username} autoComplete="username"
@@ -63,6 +87,8 @@ export default function LoginPage({ onAuthenticated }) {
         <button className="btn" style={{ width: '100%', marginTop: 6 }} disabled={busy || !username || !password}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
+        </>
+        )}
 
         {accounts.length > 0 && (
           <div className="demo-accounts">

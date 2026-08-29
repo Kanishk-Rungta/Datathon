@@ -93,6 +93,11 @@ def capabilities(container: ContainerDep) -> dict[str, Any]:
             "Graph traversal runs against Neo4j; NetworkX remains the automatic fallback."
         ),
         "datastore_backend": str(settings.datastore_backend),
+        # The console reads this to decide whether to render the Catalyst
+        # Authentication widget or its own credential form. Reported rather
+        # than probed so the two halves cannot disagree about which identity
+        # provider is actually in force.
+        "identity_backend": str(settings.identity_backend),
         "financial_data": "synthetic extension — not part of the source FIR schema",
         "voice_input": {
             "browser_speech_api": True,
