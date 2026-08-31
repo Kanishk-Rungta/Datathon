@@ -93,7 +93,12 @@ function render(kind, data, onSelectNode) {
         </>
       )
     }
+    // `heatmap` is declared alongside `map` in domain/models.py and carries
+    // the same grid-cell shape. Without this case it fell through to the
+    // default and rendered a titled panel with nothing in it, which reads as
+    // "no concentrations found" rather than "this console cannot draw that".
     case 'map':
+    case 'heatmap':
       return <Cells cells={data.cells || []} gridMetres={data.grid_metres} />
     case 'graph':
       return <GraphView data={data} onSelectNode={onSelectNode} />
@@ -112,7 +117,15 @@ function render(kind, data, onSelectNode) {
     case 'spatiotemporal_forecast':
       return <SpatioTemporalForecast data={data} />
     default:
-      return null
+      // An unrecognised payload type means the agents emit something this
+      // console has not been taught to draw. Say so, rather than showing an
+      // empty panel that looks like an empty result.
+      return (
+        <div className="panel__note">
+          This answer returned a “{kind}” view, which this console cannot display yet.
+          The figures behind it are listed under Evidence.
+        </div>
+      )
   }
 }
 

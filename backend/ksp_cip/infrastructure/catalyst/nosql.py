@@ -96,7 +96,7 @@ class CatalystKeyValueStore:
     def delete(self, namespace: str, key: str) -> None:
         self._require_namespace(namespace)
         self._store.execute(
-            f"DELETE FROM {self._table} WHERE namespace = :ns AND key = :k",
+            f"DELETE FROM {self._table} WHERE namespace = :ns AND kv_key = :k",
             {"ns": namespace, "k": key},
         )
 
@@ -104,11 +104,11 @@ class CatalystKeyValueStore:
         self._require_namespace(namespace)
         now = datetime.now(timezone.utc).isoformat()
         rows = self._store.query(
-            f"SELECT key, value_json FROM {self._table} WHERE namespace = :ns AND key LIKE :prefix"
-            " AND (expires_at IS NULL OR expires_at > :now) ORDER BY key LIMIT :limit",
+            f"SELECT kv_key, value_json FROM {self._table} WHERE namespace = :ns AND kv_key LIKE :prefix"
+            " AND (expires_at IS NULL OR expires_at > :now) ORDER BY kv_key LIMIT :limit",
             {"ns": namespace, "prefix": f"{key_prefix}%", "now": now, "limit": limit},
         )
-        return [{"key": r["key"], **json.loads(r["value_json"])} for r in rows]
+        return [{"key": r["kv_key"], **json.loads(r["value_json"])} for r in rows]
 
     def purge_expired(self) -> int:
         now = datetime.now(timezone.utc).isoformat()
@@ -144,7 +144,7 @@ class CatalystKeyValueStore:
     def _read(self, namespace: str, key: str) -> list[dict[str, Any]]:
         now = datetime.now(timezone.utc).isoformat()
         return self._store.query(
-            f"SELECT value_json FROM {self._table} WHERE namespace = :ns AND key = :k"
+            f"SELECT value_json FROM {self._table} WHERE namespace = :ns AND kv_key = :k"
             " AND (expires_at IS NULL OR expires_at > :now)",
             {"ns": namespace, "k": key, "now": now},
         )
@@ -152,9 +152,9 @@ class CatalystKeyValueStore:
     def _write(self, namespace: str, key: str, encoded: str, expires: str, updated: str) -> None:
         self._store.execute(
             f"""
-            INSERT INTO {self._table} (namespace, key, value_json, expires_at, updated_at)
+            INSERT INTO {self._table} (namespace, kv_key, value_json, expires_at, updated_at)
             VALUES (:ns, :k, :v, :e, :u)
-            ON CONFLICT (namespace, key) DO UPDATE SET
+            ON CONFLICT (namespace, kv_key) DO UPDATE SET
                 value_json = excluded.value_json,
                 expires_at = excluded.expires_at,
                 updated_at = excluded.updated_at

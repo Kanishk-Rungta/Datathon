@@ -3,7 +3,7 @@
     "backend/ksp_cip/infrastructure/db/schema.sql",
     "migrations.py"
   ],
-  "table_count": 47,
+  "table_count": 48,
   "tables": [
     {
       "table": "audit_event",
@@ -522,14 +522,20 @@
           "type": "INTEGER",
           "primary_key": false,
           "not_null": true,
-          "references": null
+          "references": {
+            "table": "curated_Accused",
+            "column": "AccusedMasterID"
+          }
         },
         {
           "name": "right_accused_id",
           "type": "INTEGER",
           "primary_key": false,
           "not_null": true,
-          "references": null
+          "references": {
+            "table": "curated_Accused",
+            "column": "AccusedMasterID"
+          }
         },
         {
           "name": "score",
@@ -874,7 +880,7 @@
           "references": null
         },
         {
-          "name": "key",
+          "name": "kv_key",
           "type": "TEXT",
           "primary_key": true,
           "not_null": true,
@@ -2762,6 +2768,151 @@
       ]
     },
     {
+      "table": "ext_socioeconomic_indicator",
+      "columns": [
+        {
+          "name": "indicator_id",
+          "type": "TEXT",
+          "primary_key": true,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "district_id",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "district_name",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "census_year",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "population",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "literacy_rate",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "male_literacy",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "female_literacy",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "urbanization_percent",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "sex_ratio",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "population_density",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "unemployment_rate",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "poverty_headcount",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "migration_inflow_rate",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "sc_st_percent",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "per_capita_income_index",
+          "type": "REAL",
+          "primary_key": false,
+          "not_null": false,
+          "references": null
+        },
+        {
+          "name": "data_source",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "data_quality",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "is_extension",
+          "type": "INTEGER",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "primary_key": false,
+          "not_null": true,
+          "references": null
+        }
+      ]
+    },
+    {
       "table": "raw_record",
       "columns": [
         {
@@ -3197,6 +3348,30 @@
       "unique": false,
       "columns": [
         "approval_status"
+      ]
+    },
+    {
+      "name": "ix_ext_socio_district",
+      "table": "ext_socioeconomic_indicator",
+      "unique": false,
+      "columns": [
+        "district_id"
+      ]
+    },
+    {
+      "name": "ix_ext_socio_year",
+      "table": "ext_socioeconomic_indicator",
+      "unique": false,
+      "columns": [
+        "census_year"
+      ]
+    },
+    {
+      "name": "ix_kv_expiry",
+      "table": "cip_kv",
+      "unique": false,
+      "columns": [
+        "expires_at"
       ]
     }
   ]

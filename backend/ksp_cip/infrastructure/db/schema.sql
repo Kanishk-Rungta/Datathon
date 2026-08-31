@@ -401,10 +401,14 @@ CREATE TABLE IF NOT EXISTS cip_person_identity (
 CREATE INDEX IF NOT EXISTS ix_identity_norm ON cip_person_identity (normalized_name);
 CREATE INDEX IF NOT EXISTS ix_identity_phonetic ON cip_person_identity (phonetic_key);
 
+-- The two accused references are declared, not implied: the review queue
+-- joins both back to curated_Accused, and on Catalyst a join is only possible
+-- through a declared relationship. Left undeclared, the review endpoint failed
+-- with "No relationship between tables la and l".
 CREATE TABLE IF NOT EXISTS cip_entity_resolution_link (
     link_id           TEXT PRIMARY KEY,
-    left_accused_id   INTEGER NOT NULL,
-    right_accused_id  INTEGER NOT NULL,
+    left_accused_id   INTEGER NOT NULL REFERENCES curated_Accused (AccusedMasterID),
+    right_accused_id  INTEGER NOT NULL REFERENCES curated_Accused (AccusedMasterID),
     score             REAL NOT NULL,
     decision          TEXT NOT NULL,          -- auto_link | review | rejected
     review_state      TEXT NOT NULL DEFAULT 'pending',
@@ -516,13 +520,17 @@ CREATE TABLE IF NOT EXISTS cip_conversation_turn (
 );
 CREATE INDEX IF NOT EXISTS ix_conversation_user ON cip_conversation_turn (user_id, created_at);
 
+-- `kv_key`, not `key`: Catalyst Data Store rejects `key` as a reserved
+-- keyword ("Column name cannot contain reserved keywords"), found when
+-- provisioning the live schema. Renamed here rather than mapped per-backend
+-- so both backends keep one column name. See migration 4.
 CREATE TABLE IF NOT EXISTS cip_kv (
     namespace         TEXT NOT NULL,
-    key               TEXT NOT NULL,
+    kv_key            TEXT NOT NULL,
     value_json        TEXT NOT NULL,
     expires_at        TEXT,
     updated_at        TEXT NOT NULL,
-    PRIMARY KEY (namespace, key)
+    PRIMARY KEY (namespace, kv_key)
 );
 CREATE INDEX IF NOT EXISTS ix_kv_expiry ON cip_kv (expires_at);
 

@@ -21,7 +21,11 @@ from ..application.agents import (
     NetworkIntelligenceAgent,
     SupervisorAgent,
 )
-from ..application.analytics import AnalyticsEngine, SocioEconomicCorrelator, SpatioTemporalForecaster
+from ..application.analytics import (
+    AnalyticsEngine,
+    SocioEconomicCorrelator,
+    SpatioTemporalForecaster,
+)
 from ..application.graph import EntityResolver, FinancialAnalyzer, GraphBuilder, GraphService
 from ..application.nlu import NLUEngine
 from ..application.pipeline import DataQualitySuite, IntelligenceRefresher, SeedPipeline
@@ -36,7 +40,6 @@ from ..application.services import (
     PDFExportService,
 )
 from ..config import Settings, get_settings
-from ..config.settings import DataStoreBackend
 from ..domain.ports import DataStore, FileStore
 from ..infrastructure.db.kv_store import RelationalKeyValueStore
 from ..infrastructure.db.migrations import apply_migrations
@@ -111,6 +114,8 @@ class Container:
     # application
     llm: Any
     engine: AnalyticsEngine
+    #: Read directly by the analytics router, which is why they are fields
+    #: here and not only constructor arguments to CrimeAnalyticsAgent.
     socioeconomic_correlator: SocioEconomicCorrelator
     spatiotemporal_forecaster: SpatioTemporalForecaster
     graph: GraphService
@@ -171,20 +176,13 @@ def build_container(settings: Settings | None = None) -> Container:
 
     clock = SystemClock()
     store = _build_store(settings)
-    if settings.datastore_backend is DataStoreBackend.CATALYST:
-        # Schema provisioning against a live Catalyst project is a reviewed,
-        # manual step (docs/deployment/catalyst-schema.md, P2-01) — never an
-        # automatic executescript() at startup. CatalystDataStore has no
-        # executescript for exactly this reason, so apply_migrations() would
-        # crash here rather than skip; it must not be called for this backend.
-        LOGGER.info("catalyst_schema_provisioning_skipped",
-                    extra={"detail": "see docs/deployment/catalyst-schema.md"})
-    else:
-        apply_migrations(store)
+    _prepare_schema(settings, store)
     filestore = _build_filestore(settings)
 
     reference = ReferenceRepository(store)
-    cases = CaseRepository(store)
+    # Cases resolve their display labels from the reference cache rather than
+    # joining eight lookup tables -- see CaseRepository's docstring.
+    cases = CaseRepository(store, reference)
     analytics = AnalyticsRepository(store)
     graph_repository = GraphRepository(store)
     embeddings = EmbeddingRepository(store)
@@ -224,7 +222,9 @@ def build_container(settings: Settings | None = None) -> Container:
         early_warning_min_baseline=settings.early_warning_min_baseline,
     )
     socioeconomic_correlator = SocioEconomicCorrelator(analytics, socioeconomic_repository)
-    spatiotemporal_forecaster = SpatioTemporalForecaster(analytics, grid_metres=settings.hotspot_grid_metres)
+    spatiotemporal_forecaster = SpatioTemporalForecaster(
+        analytics, grid_metres=settings.hotspot_grid_metres
+    )
     graph = _build_graph(settings, graph_repository)
     embedding_model = HashedNgramEmbeddingModel(
         dimensions=settings.embedding_dimensions, model_name=settings.embedding_model_name
@@ -239,6 +239,12 @@ def build_container(settings: Settings | None = None) -> Container:
         audit, cases, reference, retrieval, authorization,
         default_page_size=settings.default_case_page_size,
     )
+    # All three optional dependencies are supplied. Left at their None
+    # defaults the agent still answers, but degrades silently: spatial
+    # forecasting reports itself "not enabled on this deployment",
+    # organised-activity alerting returns nothing, and socio-economic
+    # correlation rebuilds its own correlator per call from a private
+    # repository attribute.
     crime_analytics = CrimeAnalyticsAgent(
         audit, engine, analytics, reference, hotspots, alerts, authorization,
         correlator=socioeconomic_correlator,
@@ -290,7 +296,8 @@ def build_container(settings: Settings | None = None) -> Container:
         graph_repository=graph_repository, embeddings=embeddings, identities=identities,
         hotspots=hotspots, alerts=alerts, priority=priority, financial=financial,
         users=users, conversations=conversations, audit_repository=audit_repository,
-        control=control, events=events, socioeconomic_repository=socioeconomic_repository,
+        control=control, events=events,
+        socioeconomic_repository=socioeconomic_repository,
         audit=audit, authorization=authorization,
         identity_service=identity_service, identity_provider=identity_provider,
         cache=cache, memory=memory, language=language,
@@ -305,7 +312,29 @@ def build_container(settings: Settings | None = None) -> Container:
     )
 
 
+def _prepare_schema(settings: Settings, store: DataStore) -> None:
+    """Migrate the schema, or verify it -- never both.
+
+    SQLite is this process's own file, so it owns and migrates it. A Catalyst
+    project is shared infrastructure provisioned through a reviewed step, and
+    ``CatalystDataStore`` has no ``executescript`` precisely so a running API
+    cannot issue DDL against it. Calling ``apply_migrations`` unconditionally
+    is what made the first Catalyst-backed deployment fail to boot:
+    ``AttributeError: 'CatalystDataStore' object has no attribute
+    'executescript'``.
+    """
+    from ..config.settings import DataStoreBackend
+    from ..infrastructure.db.migrations import verify_provisioned_schema
+
+    if settings.datastore_backend is DataStoreBackend.SQLITE:
+        apply_migrations(store)
+    else:
+        verify_provisioned_schema(store)
+
+
 def _build_store(settings: Settings) -> DataStore:
+    from ..config.settings import DataStoreBackend
+
     if settings.datastore_backend is DataStoreBackend.CATALYST:
         from ..infrastructure.catalyst.datastore import CatalystDataStore
 
@@ -354,6 +383,39 @@ def _build_cache(settings: Settings) -> Any:
     return InProcessCache()
 
 
+def _build_graph(settings: Settings, repository: GraphRepository) -> Any:
+    """Return the graph engine named by ``KSPCIP_GRAPH_BACKEND``.
+
+    Both classes expose the same method signatures, so nothing downstream of
+    here knows which one it got. That parity is the whole point: the choice is
+    an environment variable, not a code change.
+
+    This existing *only as a setting* was a defect, not a gap. ``build_container``
+    constructed ``GraphService`` unconditionally, so ``KSPCIP_GRAPH_BACKEND=neo4j``
+    changed nothing -- while ``/capabilities`` reads ``settings.graph_backend``
+    directly and would have announced "Graph traversal runs against Neo4j" over a
+    NetworkX deployment. The one field whose job is to disclose the in-memory
+    limitation would have stated its opposite.
+
+    ``Neo4jGraphAdapter`` falls back to NetworkX by itself when the driver is
+    missing or the database is unreachable, so selecting ``neo4j`` degrades
+    rather than failing to boot. The import stays inside the branch because the
+    ``neo4j`` driver is not a deployment dependency.
+    """
+    from ..config.settings import GraphBackend
+
+    if settings.graph_backend is GraphBackend.NEO4J:
+        from ..infrastructure.graph.neo4j import Neo4jGraphAdapter
+
+        return Neo4jGraphAdapter(
+            repository,
+            uri=settings.neo4j_uri,
+            user=settings.neo4j_user,
+            password=settings.neo4j_password,
+        )
+    return GraphService(repository)
+
+
 def _build_identity(settings: Settings, users: UserRepository, authorization: AuthorizationService,
                     local: IdentityService) -> Any:
     """Return the component that turns a bearer token into a ``Principal``.
@@ -368,22 +430,6 @@ def _build_identity(settings: Settings, users: UserRepository, authorization: Au
 
         return CatalystIdentityProvider(users, authorization, settings)
     return local
-
-
-def _build_graph(settings: Settings, graph_repository: GraphRepository) -> Any:
-    """Return GraphService (NetworkX) or Neo4jGraphAdapter based on configuration."""
-    from ..config.settings import GraphBackend
-
-    if settings.graph_backend is GraphBackend.NEO4J:
-        from ..infrastructure.graph.neo4j import Neo4jGraphAdapter
-
-        return Neo4jGraphAdapter(
-            graph_repository,
-            uri=settings.neo4j_uri,
-            user=settings.neo4j_user,
-            password=settings.neo4j_password,
-        )
-    return GraphService(graph_repository)
 
 
 @functools.lru_cache(maxsize=1)

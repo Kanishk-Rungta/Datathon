@@ -13,7 +13,7 @@ from typing import Any, Sequence
 
 from ....domain.models import UnitScope
 from ....domain.ports import DataStore
-from .cases import in_clause
+from .cases import MATCH_NOTHING, in_clause
 
 
 @dataclass(slots=True)
@@ -81,6 +81,43 @@ class EventCalendarRepository:
         return int(rows[0]["n"]) if rows else 0
 
 
+def _rollup(
+    rows: Sequence[dict[str, Any]],
+    source: str,
+    start: int,
+    end: int,
+    out_key: str,
+    carry: tuple[str, ...] = (),
+) -> list[dict[str, Any]]:
+    """Roll per-date counts up to a coarser period, summing ``case_count``.
+
+    The obvious way to write these queries is ``GROUP BY substr(date, 1, 7)``.
+    ZCQL rejects it — *"Aggregate function cannot have more than one column"* —
+    because it accepts only single-argument functions. Grouping by the raw
+    date in SQL and folding here keeps one query per backend rather than two
+    dialects, and the database still does the heavy aggregation: the rows
+    crossing the wire number one per distinct date, not one per case.
+    """
+    buckets: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for row in rows:
+        raw = row.get(source)
+        if raw is None:
+            continue
+        bucket_value = str(raw)[start:end]
+        if not bucket_value:
+            continue
+        key = (bucket_value, *(row.get(name) for name in carry))
+        entry = buckets.get(key)
+        if entry is None:
+            entry = {out_key: bucket_value}
+            for name in carry:
+                entry[name] = row.get(name)
+            entry["case_count"] = 0
+            buckets[key] = entry
+        entry["case_count"] += int(row.get("case_count") or 0)
+    return [buckets[key] for key in sorted(buckets, key=lambda k: tuple(str(p) for p in k))]
+
+
 class AnalyticsRepository:
     def __init__(self, store: DataStore) -> None:
         self._store = store
@@ -91,7 +128,7 @@ class AnalyticsRepository:
         if not scope.statewide:
             allowed = sorted(scope.unit_ids)
             if not allowed:
-                return " WHERE 1 = 0", {}
+                return MATCH_NOTHING, {}
             fragment, scope_params = in_clause("scope_u", allowed)
             clauses.append(f"c.PoliceStationID IN ({fragment})")
             params.update(scope_params)
@@ -130,20 +167,22 @@ class AnalyticsRepository:
     # ------------------------------------------------------------ timeseries
     def monthly_counts(self, filters: AggregateFilter, scope: UnitScope) -> list[dict[str, Any]]:
         where, params = self._predicate(filters, scope)
-        return self._store.query(
-            "SELECT substr(c.CrimeRegisteredDate, 1, 7) AS period, COUNT(*) AS case_count"
-            + self._FROM + where + " GROUP BY period ORDER BY period",
+        rows = self._store.query(
+            "SELECT c.CrimeRegisteredDate AS period_date, COUNT(*) AS case_count"
+            + self._FROM + where + " GROUP BY c.CrimeRegisteredDate ORDER BY c.CrimeRegisteredDate",
             params,
         )
+        return _rollup(rows, "period_date", 0, 7, "period")
 
     def monthly_counts_by_sub_head(self, filters: AggregateFilter, scope: UnitScope) -> list[dict[str, Any]]:
         where, params = self._predicate(filters, scope)
-        return self._store.query(
-            "SELECT substr(c.CrimeRegisteredDate, 1, 7) AS period, c.CrimeMinorHeadID AS sub_head_id,"
+        rows = self._store.query(
+            "SELECT c.CrimeRegisteredDate AS period_date, c.CrimeMinorHeadID AS sub_head_id,"
             " sh.CrimeHeadName AS sub_head, COUNT(*) AS case_count"
-            + self._FROM + where + " GROUP BY period, sub_head_id, sub_head ORDER BY period",
+            + self._FROM + where + " GROUP BY c.CrimeRegisteredDate, c.CrimeMinorHeadID, sh.CrimeHeadName ORDER BY c.CrimeRegisteredDate",
             params,
         )
+        return _rollup(rows, "period_date", 0, 7, "period", carry=("sub_head_id", "sub_head"))
 
     def daily_counts(self, filters: AggregateFilter, scope: UnitScope) -> list[dict[str, Any]]:
         where, params = self._predicate(filters, scope)
@@ -194,12 +233,13 @@ class AnalyticsRepository:
 
     def counts_by_hour(self, filters: AggregateFilter, scope: UnitScope) -> list[dict[str, Any]]:
         where, params = self._predicate(filters, scope)
-        return self._store.query(
-            "SELECT substr(c.IncidentFromDate, 12, 2) AS hour_of_day, COUNT(*) AS case_count"
+        rows = self._store.query(
+            "SELECT c.IncidentFromDate AS incident_at, COUNT(*) AS case_count"
             + self._FROM + where + " AND c.IncidentFromDate IS NOT NULL"
-            " GROUP BY hour_of_day ORDER BY hour_of_day",
+            " GROUP BY c.IncidentFromDate ORDER BY c.IncidentFromDate",
             params,
         )
+        return _rollup(rows, "incident_at", 11, 13, "hour_of_day")
 
     # ------------------------------------------------------------------- geo
     def case_time_and_place(self, filters: AggregateFilter, scope: UnitScope,

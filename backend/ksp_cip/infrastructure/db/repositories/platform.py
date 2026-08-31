@@ -128,11 +128,15 @@ class ConversationRepository:
         return [_decode_turn(row) for row in rows]
 
     def next_turn_seq(self, session_id: str) -> int:
+        # COALESCE is a two-argument function, which ZCQL rejects ("Aggregate
+        # function cannot have more than one column"). The empty case is
+        # handled here instead, which reads no worse and works on both stores.
         rows = self._store.query(
-            "SELECT COALESCE(MAX(turn_seq), 0) AS m FROM cip_conversation_turn WHERE session_id = :s",
+            "SELECT MAX(turn_seq) AS m FROM cip_conversation_turn WHERE session_id = :s",
             {"s": session_id},
         )
-        return int(rows[0]["m"]) + 1 if rows else 1
+        highest = rows[0]["m"] if rows else None
+        return int(highest) + 1 if highest is not None else 1
 
     def sessions_for_user(self, user_id: str, limit: int = 25) -> list[dict[str, Any]]:
         return self._store.query(

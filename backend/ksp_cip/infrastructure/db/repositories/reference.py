@@ -143,7 +143,16 @@ class ReferenceRepository:
         return {int(row["descendant_unit_id"]) for row in rows} or {unit_id}
 
     def unit_ids_for_district(self, district_id: int) -> set[int]:
-        return {int(u["UnitID"]) for u in self.units() if u["DistrictID"] == district_id}
+        # Compare as ints, not as-is: SQLite returns INTEGER columns as Python
+        # ints, Catalyst returns them as strings ('2928'), and `'2928' == 2928`
+        # is False -- so this silently returned an empty set on Catalyst and
+        # every district-filtered query matched nothing.
+        target = int(district_id)
+        return {
+            int(u["UnitID"])
+            for u in self.units()
+            if u.get("DistrictID") is not None and int(u["DistrictID"]) == target
+        }
 
     # -------------------------------------------------------- name matching
     def resolve_district(self, name: str, *, threshold: float = 0.78) -> dict[str, Any] | None:

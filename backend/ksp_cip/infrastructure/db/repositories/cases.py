@@ -27,31 +27,26 @@ SELECT
     c.IncidentToDate          AS incident_to_date,
     c.InfoReceivedPSDate      AS info_received_ps_date,
     c.PoliceStationID         AS police_station_id,
-    u.UnitName                AS police_station_name,
-    u.DistrictID              AS district_id,
-    d.DistrictName            AS district_name,
-    cat.LookupValue           AS case_category,
-    g.LookupValue             AS gravity,
-    h.CrimeGroupName          AS crime_head,
-    sh.CrimeHeadName          AS crime_sub_head,
+    c.CaseCategoryID          AS case_category_id,
+    c.GravityOffenceID        AS gravity_id,
     c.CrimeMajorHeadID        AS crime_major_head_id,
     c.CrimeMinorHeadID        AS crime_minor_head_id,
-    st.CaseStatusName         AS status,
-    ct.CourtName              AS court_name,
+    c.CaseStatusID            AS status_id,
+    c.CourtID                 AS court_id,
     c.latitude                AS latitude,
     c.longitude               AS longitude,
     c.BriefFacts              AS brief_facts,
     c.cip_brief_facts_kn      AS brief_facts_kn
 FROM curated_CaseMaster c
-LEFT JOIN curated_Unit u             ON u.UnitID = c.PoliceStationID
-LEFT JOIN curated_District d         ON d.DistrictID = u.DistrictID
-LEFT JOIN curated_CaseCategory cat   ON cat.CaseCategoryID = c.CaseCategoryID
-LEFT JOIN curated_GravityOffence g   ON g.GravityOffenceID = c.GravityOffenceID
-LEFT JOIN curated_CrimeHead h        ON h.CrimeHeadID = c.CrimeMajorHeadID
-LEFT JOIN curated_CrimeSubHead sh    ON sh.CrimeSubHeadID = c.CrimeMinorHeadID
-LEFT JOIN curated_CaseStatusMaster st ON st.CaseStatusID = c.CaseStatusID
-LEFT JOIN curated_Court ct           ON ct.CourtID = c.CourtID
 """
+
+
+#: The portable spelling of "return no rows".
+#:
+#: ``WHERE 1 = 0`` is the obvious form and SQLite accepts it, but ZCQL rejects
+#: it outright ("Syntax error in given query"). A primary key is never null, so
+#: this predicate is always false and is valid in both dialects.
+MATCH_NOTHING = " WHERE c.CaseMasterID IS NULL"
 
 
 def in_clause(prefix: str, values: Sequence[Any]) -> tuple[str, dict[str, Any]]:
@@ -82,8 +77,87 @@ class CaseFilter:
 
 
 class CaseRepository:
-    def __init__(self, store: DataStore) -> None:
+    """Case reads, with display names resolved from cache rather than joined.
+
+    The case select used to carry eight ``LEFT JOIN``s, every one of them
+    turning an id into a label (``DistrictID`` -> "Bengaluru Urban"). Catalyst
+    permits at most four joins per ZCQL query, so that query could not run
+    there at all -- and on any backend it was asking the database to re-read a
+    few hundred reference rows on every search.
+
+    ``ReferenceRepository`` already holds all of those tables in memory, warmed
+    at startup and invalidated on publication, so the labels are attached after
+    the query instead. Filtering and authorization stay in SQL: the scope
+    predicate is on ``curated_CaseMaster.PoliceStationID``, a base-table
+    column, so removing the joins does not move an authorization decision out
+    of the database.
+
+    ``reference`` is optional so existing callers and tests keep working; when
+    it is absent, rows come back with ids and no labels.
+    """
+
+    def __init__(self, store: DataStore, reference: Any | None = None) -> None:
         self._store = store
+        self._reference = reference
+
+    # ------------------------------------------------------- label resolution
+    def _labels(self) -> dict[str, dict[Any, Any]]:
+        """Build id -> label maps from the reference cache (all in memory)."""
+        ref = self._reference
+        if ref is None:
+            return {}
+
+        def index(rows: Iterable[dict[str, Any]], key: str, value: str) -> dict[Any, Any]:
+            out: dict[Any, Any] = {}
+            for row in rows:
+                if row.get(key) is not None:
+                    out[int(row[key])] = row.get(value)
+            return out
+
+        units = {int(u["UnitID"]): u for u in ref.units() if u.get("UnitID") is not None}
+        return {
+            "units": units,
+            "districts": index(ref.districts(), "DistrictID", "DistrictName"),
+            "categories": index(ref.case_categories(), "CaseCategoryID", "LookupValue"),
+            "gravity": index(ref.gravity_levels(), "GravityOffenceID", "LookupValue"),
+            "heads": index(ref.crime_heads(), "CrimeHeadID", "CrimeGroupName"),
+            "sub_heads": index(ref.crime_sub_heads(), "CrimeSubHeadID", "CrimeHeadName"),
+            "statuses": index(ref.case_statuses(), "CaseStatusID", "CaseStatusName"),
+            "courts": index(ref.courts(), "CourtID", "CourtName"),
+        }
+
+    def _decorate(self, row: dict[str, Any], labels: dict[str, dict[Any, Any]]) -> dict[str, Any]:
+        if not labels:
+            return row
+        station_id = row.get("police_station_id")
+        unit = labels["units"].get(int(station_id)) if station_id is not None else None
+        district_id = unit.get("DistrictID") if unit else None
+        enriched = dict(row)
+        enriched["police_station_name"] = unit.get("UnitName") if unit else None
+        enriched["district_id"] = district_id
+        enriched["district_name"] = (
+            labels["districts"].get(int(district_id)) if district_id is not None else None
+        )
+        for field_name, source, key in (
+            ("case_category", "categories", "case_category_id"),
+            ("gravity", "gravity", "gravity_id"),
+            ("crime_head", "heads", "crime_major_head_id"),
+            ("crime_sub_head", "sub_heads", "crime_minor_head_id"),
+            ("status", "statuses", "status_id"),
+            ("court_name", "courts", "court_id"),
+        ):
+            value = row.get(key)
+            enriched[field_name] = labels[source].get(int(value)) if value is not None else None
+        return enriched
+
+    def _station_ids_for_district(self, district_id: int) -> list[int]:
+        """Police stations in a district, from cache when one is available."""
+        if self._reference is not None:
+            return sorted(self._reference.unit_ids_for_district(district_id))
+        rows = self._store.query(
+            "SELECT UnitID FROM curated_Unit WHERE DistrictID = :d", {"d": district_id}
+        )
+        return [int(r["UnitID"]) for r in rows if r.get("UnitID") is not None]
 
     # ---------------------------------------------------------------- build
     def _where(self, filters: CaseFilter, scope: UnitScope) -> tuple[str, dict[str, Any]]:
@@ -93,7 +167,7 @@ class CaseRepository:
         if not scope.statewide:
             allowed = sorted(scope.unit_ids)
             if not allowed:
-                return " WHERE 1 = 0", {}
+                return MATCH_NOTHING, {}
             fragment, scope_params = in_clause("scope_u", allowed)
             clauses.append(f"c.PoliceStationID IN ({fragment})")
             params.update(scope_params)
@@ -103,8 +177,18 @@ class CaseRepository:
             clauses.append(f"c.PoliceStationID IN ({fragment})")
             params.update(extra)
         if filters.district_ids:
-            fragment, extra = in_clause("f_d", list(filters.district_ids))
-            clauses.append(f"u.DistrictID IN ({fragment})")
+            # Was `u.DistrictID IN (...)`, the one predicate that needed the
+            # Unit join. A case belongs to a district exactly when its police
+            # station does, so the district expands to its stations first --
+            # same rows, no join. Falls back to the join-free equivalent of
+            # "matches nothing" when the district has no stations.
+            station_ids: list[int] = []
+            for district_id in filters.district_ids:
+                station_ids.extend(self._station_ids_for_district(int(district_id)))
+            if not station_ids:
+                return MATCH_NOTHING, {}
+            fragment, extra = in_clause("f_d", sorted(set(station_ids)))
+            clauses.append(f"c.PoliceStationID IN ({fragment})")
             params.update(extra)
         if filters.crime_sub_head_ids:
             fragment, extra = in_clause("f_sh", list(filters.crime_sub_head_ids))
@@ -158,14 +242,14 @@ class CaseRepository:
         params["limit"] = max(1, filters.limit)
         params["offset"] = max(0, filters.offset)
         rows = self._store.query(f"{CASE_SELECT}{where} {order} LIMIT :limit OFFSET :offset", params)
-        return [_to_summary(row) for row in rows]
+        labels = self._labels()
+        return [_to_summary(self._decorate(row, labels)) for row in rows]
 
     def count(self, filters: CaseFilter, scope: UnitScope) -> int:
         where, params = self._where(filters, scope)
-        sql = (
-            "SELECT COUNT(*) AS n FROM curated_CaseMaster c"
-            " LEFT JOIN curated_Unit u ON u.UnitID = c.PoliceStationID" + where
-        )
+        # No Unit join: _where now expands a district filter to its station
+        # ids, so every predicate is on curated_CaseMaster itself.
+        sql = "SELECT COUNT(*) AS n FROM curated_CaseMaster c" + where
         rows = self._store.query(sql, params)
         return int(rows[0]["n"]) if rows else 0
 
@@ -262,16 +346,46 @@ class CaseRepository:
         if not case_ids:
             return []
         fragment, params = in_clause("cid", list(case_ids))
-        return self._store.query(
-            "SELECT asa.CaseMasterID, asa.ActID, asa.SectionID, asa.ActOrderID, asa.SectionOrderID,"
-            " a.ShortName, s.SectionDescription"
+        # Both lookups used to be joins, and neither can be one on Catalyst:
+        # the section join needs a compound `ON ... AND ...` ("Only one join
+        # condition is allowed"), and both are keyed on TEXT columns, which a
+        # Catalyst foreign key cannot reference. Act and Section are small
+        # reference tables, so they are read whole and stitched here instead.
+        rows = self._store.query(
+            "SELECT asa.CaseMasterID, asa.ActID, asa.SectionID, asa.ActOrderID, asa.SectionOrderID"
             " FROM curated_ActSectionAssociation asa"
-            " LEFT JOIN curated_Act a ON a.ActCode = asa.ActID"
-            " LEFT JOIN curated_Section s ON s.ActCode = asa.ActID AND s.SectionCode = asa.SectionID"
             f" WHERE asa.CaseMasterID IN ({fragment})"
             " ORDER BY asa.CaseMasterID, asa.ActOrderID, asa.SectionOrderID",
             params,
         )
+        if not rows:
+            return []
+
+        acts = (
+            self._reference.acts() if self._reference is not None
+            else self._store.query("SELECT ActCode, ShortName FROM curated_Act")
+        )
+        act_names = {str(a["ActCode"]): a.get("ShortName") for a in acts if a.get("ActCode") is not None}
+        sections = self._store.query(
+            "SELECT ActCode, SectionCode, SectionDescription FROM curated_Section"
+        )
+        section_text = {
+            (str(s["ActCode"]), str(s["SectionCode"])): s.get("SectionDescription")
+            for s in sections
+            if s.get("ActCode") is not None and s.get("SectionCode") is not None
+        }
+
+        enriched: list[dict[str, Any]] = []
+        for row in rows:
+            act_id, section_id = row.get("ActID"), row.get("SectionID")
+            out = dict(row)
+            out["act_short_name"] = act_names.get(str(act_id)) if act_id is not None else None
+            out["SectionDescription"] = (
+                section_text.get((str(act_id), str(section_id)))
+                if act_id is not None and section_id is not None else None
+            )
+            enriched.append(out)
+        return enriched
 
     def arrests_for_cases(self, case_ids: Sequence[int]) -> list[dict[str, Any]]:
         if not case_ids:

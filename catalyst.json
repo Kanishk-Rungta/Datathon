@@ -1,0 +1,18 @@
+{
+  "appsail": [
+    {
+      "source": "dist/cip-api",
+      "name": "cip-api"
+    },
+    {
+      "source": "dist/cip-console",
+      "name": "cip-console"
+    }
+  ],
+  "functions": {
+    "source": "dist",
+    "targets": [
+      "cip_refresh"
+    ]
+  }
+}

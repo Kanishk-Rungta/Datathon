@@ -46,7 +46,7 @@ export default function Inspector({ answer, activeLocator, onSelectEvidence, pri
           <EvidenceTab answer={answer} activeLocator={activeLocator} onSelectEvidence={onSelectEvidence} />
         )}
         {tab === 'overview' && <OverviewTab />}
-        {tab === 'network' && <NetworkTab />}
+        {tab === 'network' && <NetworkTab principal={principal} />}
         {tab === 'review' && <ReviewTab principal={principal} />}
       </div>
     </div>
@@ -67,6 +67,7 @@ function ResultTab({ answer }) {
 
 function EvidenceTab({ answer, activeLocator, onSelectEvidence }) {
   const [detail, setDetail] = useState(null)
+  const [detailError, setDetailError] = useState(null)
   const [loading, setLoading] = useState(false)
 
   const items = answer?.evidence || []
@@ -74,13 +75,17 @@ function EvidenceTab({ answer, activeLocator, onSelectEvidence }) {
 
   useEffect(() => {
     setDetail(null)
+    setDetailError(null)
     const crimeNo = active?.crime_nos?.[0]
     if (!crimeNo) return
     let cancelled = false
     setLoading(true)
     api.caseDetail(crimeNo)
       .then((data) => { if (!cancelled) setDetail(data) })
-      .catch(() => { if (!cancelled) setDetail(null) })
+      // Say why the record is missing. Swallowing this rendered an empty
+      // panel that looked identical to "this citation has no record behind
+      // it" -- the one thing an evidence view must never be ambiguous about.
+      .catch((err) => { if (!cancelled) setDetailError(err.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [active?.locator])
@@ -115,6 +120,11 @@ function EvidenceTab({ answer, activeLocator, onSelectEvidence }) {
       </div>
 
       {loading && <div className="empty">Loading the source record…</div>}
+      {detailError && !loading && (
+        <div className="error-note">
+          The source record behind this citation could not be loaded: {detailError}
+        </div>
+      )}
       {detail && <CaseDetail detail={detail} />}
     </>
   )
@@ -169,23 +179,56 @@ function OverviewTab() {
   const [alerts, setAlerts] = useState([])
   const [priority, setPriority] = useState([])
   const [error, setError] = useState(null)
+  const [degraded, setDegraded] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([api.summary(), api.trend({ months: 18 }), api.earlyWarning(), api.priority(8)])
-      .then(([summaryData, trendData, alertData, priorityData]) => {
-        setSummary(summaryData)
-        setTrend(trendData)
-        setAlerts(alertData.alerts || [])
-        setPriority(priorityData.cases || [])
+    /* allSettled, not all: these four panels are independent, and one of them
+     * failing is not a reason to hide the other three. A dashboard that goes
+     * blank because a single query is unavailable tells an officer less than
+     * one that shows what it does know and names what it could not load. */
+    let cancelled = false
+    Promise.allSettled([api.summary(), api.trend({ months: 18 }), api.earlyWarning(), api.priority(8)])
+      .then(([summaryRes, trendRes, alertRes, priorityRes]) => {
+        if (cancelled) return
+        const missing = []
+        if (summaryRes.status === 'fulfilled') setSummary(summaryRes.value)
+        else missing.push('the standing picture')
+        if (trendRes.status === 'fulfilled') setTrend(trendRes.value)
+        else missing.push('the trend series')
+        if (alertRes.status === 'fulfilled') setAlerts(alertRes.value.alerts || [])
+        else missing.push('early-warning signals')
+        if (priorityRes.status === 'fulfilled') setPriority(priorityRes.value.cases || [])
+        else missing.push('investigation priority')
+
+        setDegraded(missing)
+        // Only a total failure is an error; anything less is a partial view.
+        if (missing.length === 4) setError(summaryRes.reason?.message || 'Nothing could be loaded.')
+        setLoading(false)
       })
-      .catch((err) => setError(err.message))
+    return () => { cancelled = true }
   }, [])
 
   if (error) return <div className="error-note" style={{ margin: 20 }}>{error}</div>
-  if (!summary) return <div className="empty">Loading the standing picture…</div>
+  if (loading) return <div className="empty">Loading the standing picture…</div>
+  if (!summary) {
+    return (
+      <div className="error-note" style={{ margin: 20 }}>
+        The standing picture could not be loaded{degraded.length > 1 ? ', along with ' + degraded.filter((d) => d !== 'the standing picture').join(', ') : ''}.
+      </div>
+    )
+  }
 
   return (
     <>
+      {degraded.length > 0 && (
+        /* Named explicitly: a panel that is empty because a query failed must
+         * not look like a panel that is empty because there is nothing to
+         * report. */
+        <div className="error-note" style={{ margin: '12px 20px 0' }}>
+          Could not load {degraded.join(', ')}. The rest of this view is current.
+        </div>
+      )}
       <div className="panel">
         <div className="panel__head">
           <h3 className="panel__title">Registered cases in your scope</h3>
@@ -254,7 +297,8 @@ function OverviewTab() {
 
 /* -------------------------------------------------------------- network */
 
-function NetworkTab() {
+function NetworkTab({ principal }) {
+  const canSeeFinancial = (principal?.permissions || []).includes('use_financial_tools')
   const [offenders, setOffenders] = useState([])
   const [graph, setGraph] = useState(null)
   const [selected, setSelected] = useState(null)
@@ -272,10 +316,19 @@ function NetworkTab() {
       const data = await api.expandGraph({ node_id: `person:${identityId}`, hops: 2 })
       setGraph(data)
     } catch (err) { setError(err.message) }
+    // Don't ask for what this role cannot have. The financial view is gated
+    // on `use_financial_tools`; requesting it anyway produced a guaranteed
+    // 403 on every node click, which the browser logs as a failed request
+    // whether or not we catch it. The principal already carries its
+    // permissions, so the question simply isn't asked.
+    if (!canSeeFinancial) return
     try {
       const money = await api.financial(identityId)
       setFinancial(money)
-    } catch { setFinancial(null) }
+    } catch (err) {
+      setFinancial(null)
+      if (err.status !== 403) setError(err.message)
+    }
   }
 
   return (

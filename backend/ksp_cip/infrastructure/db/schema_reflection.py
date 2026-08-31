@@ -86,6 +86,44 @@ def parse_schema_columns(schema_sql: str) -> dict[str, list[str]]:
     return tables
 
 
+def parse_schema_primary_keys(schema_sql: str) -> dict[str, list[str]]:
+    """Return ``{table_name: [pk_column, ...]}`` from a ``schema.sql`` body.
+
+    Both spellings are recognised: a column-level ``PRIMARY KEY`` and a
+    table-level ``PRIMARY KEY (a, b)``. Needed by the Catalyst adapter, which
+    has to know what ``INSERT OR REPLACE`` is meant to replace -- ZCQL has no
+    equivalent statement, so it is emulated as an upsert on these columns.
+    """
+    cleaned = _strip_sql_comments(schema_sql)
+    keys: dict[str, list[str]] = {}
+    for match in _CREATE_TABLE_RE.finditer(cleaned):
+        table_name = match.group(1)
+        primary: list[str] = []
+        for fragment in _split_top_level(match.group(2)):
+            token = fragment.strip()
+            if not token:
+                continue
+            upper = token.upper()
+            if upper.startswith("PRIMARY KEY"):
+                inner = token[token.index("(") + 1: token.rindex(")")]
+                primary.extend(part.strip().strip('"`[]') for part in inner.split(","))
+            elif "PRIMARY KEY" in upper:
+                primary.append(token.split(None, 1)[0].strip('"`[]'))
+        keys[table_name] = primary
+    return keys
+
+
+@lru_cache(maxsize=1)
+def schema_primary_keys() -> dict[str, list[str]]:
+    """Primary keys of the base schema plus every migration, process-cached."""
+    from .migrations import MIGRATIONS, SCHEMA_PATH
+
+    keys = parse_schema_primary_keys(SCHEMA_PATH.read_text(encoding="utf-8"))
+    for _version, _description, sql in MIGRATIONS:
+        keys.update(parse_schema_primary_keys(sql))
+    return keys
+
+
 def _apply_alter_add_column(tables: dict[str, list[str]], sql: str) -> None:
     for match in _ALTER_ADD_COLUMN_RE.finditer(_strip_sql_comments(sql)):
         table, column = match.group(1), match.group(2)

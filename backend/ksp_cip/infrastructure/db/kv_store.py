@@ -24,9 +24,9 @@ class RelationalKeyValueStore:
         expires = (now + timedelta(seconds=ttl_seconds)).isoformat() if ttl_seconds else None
         self._store.execute(
             """
-            INSERT INTO cip_kv (namespace, key, value_json, expires_at, updated_at)
+            INSERT INTO cip_kv (namespace, kv_key, value_json, expires_at, updated_at)
             VALUES (:ns, :k, :v, :e, :u)
-            ON CONFLICT (namespace, key) DO UPDATE SET
+            ON CONFLICT (namespace, kv_key) DO UPDATE SET
                 value_json = excluded.value_json,
                 expires_at = excluded.expires_at,
                 updated_at = excluded.updated_at
@@ -38,7 +38,7 @@ class RelationalKeyValueStore:
     def get(self, namespace: str, key: str) -> dict[str, Any] | None:
         now = datetime.now(timezone.utc).isoformat()
         rows = self._store.query(
-            "SELECT value_json FROM cip_kv WHERE namespace = :ns AND key = :k"
+            "SELECT value_json FROM cip_kv WHERE namespace = :ns AND kv_key = :k"
             " AND (expires_at IS NULL OR expires_at > :now)",
             {"ns": namespace, "k": key, "now": now},
         )
@@ -47,16 +47,18 @@ class RelationalKeyValueStore:
         return json.loads(rows[0]["value_json"])
 
     def delete(self, namespace: str, key: str) -> None:
-        self._store.execute("DELETE FROM cip_kv WHERE namespace = :ns AND key = :k", {"ns": namespace, "k": key})
+        self._store.execute("DELETE FROM cip_kv WHERE namespace = :ns AND kv_key = :k", {"ns": namespace, "k": key})
 
     def scan(self, namespace: str, key_prefix: str = "", limit: int = 500) -> list[dict[str, Any]]:
         now = datetime.now(timezone.utc).isoformat()
         rows = self._store.query(
-            "SELECT key, value_json FROM cip_kv WHERE namespace = :ns AND key LIKE :prefix"
-            " AND (expires_at IS NULL OR expires_at > :now) ORDER BY key LIMIT :limit",
+            "SELECT kv_key, value_json FROM cip_kv WHERE namespace = :ns AND kv_key LIKE :prefix"
+            " AND (expires_at IS NULL OR expires_at > :now) ORDER BY kv_key LIMIT :limit",
             {"ns": namespace, "prefix": f"{key_prefix}%", "now": now, "limit": limit},
         )
-        return [{"key": r["key"], **json.loads(r["value_json"])} for r in rows]
+        # The stored column is `kv_key`; callers still receive `key`, so this
+        # rename stays inside the adapter.
+        return [{"key": r["kv_key"], **json.loads(r["value_json"])} for r in rows]
 
     def purge_expired(self) -> int:
         now = datetime.now(timezone.utc).isoformat()

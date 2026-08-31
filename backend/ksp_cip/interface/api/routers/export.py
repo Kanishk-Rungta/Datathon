@@ -63,6 +63,8 @@ def export_pdf(
     container.audit.record(
         action="export.pdf", principal=principal, object_type="export",
         object_ids=[result["key"]], outcome="success",
+        # `size_bytes` is the key the PDF service returns; reading "bytes"
+        # logged None into the audit trail and reported 0 to the caller.
         detail={"bytes": result.get("size_bytes"), "session_id": payload.session_id,
                 "case_master_id": payload.case_master_id},
     )
@@ -99,7 +101,7 @@ def _briefing_sections(container: Any, principal: Any, summary: Any) -> list[tup
     ]
     if act_sections:
         sections.append(("Charges", [
-            f"{row.get('ShortName') or row.get('ActID')} section {row.get('SectionID')}"
+            f"{row.get('ShortName') or row.get('ActCode')} section {row.get('SectionCode')}"
             for row in act_sections
         ]))
     if summary.brief_facts:

@@ -83,6 +83,25 @@ MIGRATIONS: list[tuple[int, str, str]] = [
             ON ext_socioeconomic_indicator (census_year);
         """,
     ),
+    (
+        5,
+        "cip_kv.key -> kv_key (Catalyst rejects 'key' as a reserved keyword)",
+        # This table contains only TTL-bounded session, scratchpad, cache, and
+        # idempotency records. Recreating it is therefore safe and is more
+        # portable than a column rename across SQLite and Catalyst.
+        """
+        DROP TABLE IF EXISTS cip_kv;
+        CREATE TABLE IF NOT EXISTS cip_kv (
+            namespace         TEXT NOT NULL,
+            kv_key            TEXT NOT NULL,
+            value_json        TEXT NOT NULL,
+            expires_at        TEXT,
+            updated_at        TEXT NOT NULL,
+            PRIMARY KEY (namespace, kv_key)
+        );
+        CREATE INDEX IF NOT EXISTS ix_kv_expiry ON cip_kv (expires_at);
+        """,
+    ),
 ]
 
 
@@ -102,6 +121,38 @@ def current_version(store: DataStore) -> int:
     _ensure_version_table(store)
     rows = store.query("SELECT COALESCE(MAX(version), 0) AS v FROM ctl_schema_version")
     return int(rows[0]["v"]) if rows else 0
+
+
+#: Queried at startup to prove a remote schema is really provisioned. One
+#: table per concern -- identity, curated FIR data, and the audit trail --
+#: so a half-provisioned project fails here rather than mid-conversation.
+READINESS_PROBE_TABLES = ("cip_user_account", "curated_CaseMaster", "audit_event")
+
+
+def verify_provisioned_schema(store: DataStore) -> None:
+    """Read-only startup check for a store this process must not migrate.
+
+    Catalyst schema changes go through a reviewed provisioning step
+    (``scripts/provision_catalyst_datastore.js``), never DDL issued from a
+    running request -- which is why ``CatalystDataStore`` has no
+    ``executescript``. So the deployed API cannot *create* its schema; it can
+    only refuse to start when the schema is not there.
+
+    A local reflection check would not do: the Catalyst adapter's
+    ``table_columns()`` answers from ``schema.sql`` on disk, so it cannot see
+    whether the live project was ever provisioned. Only a real query can.
+    """
+    for table in READINESS_PROBE_TABLES:
+        try:
+            store.query(f"SELECT ROWID FROM {table} LIMIT 1")
+        except Exception as exc:  # noqa: BLE001 -- re-raised with context below
+            raise RuntimeError(
+                f"Schema readiness check failed on '{table}': {exc}. "
+                "The data store is reachable only if the project is provisioned "
+                "and the OAuth credentials carry the required scopes. Provision "
+                "with `node scripts/provision_catalyst_datastore.js`, then verify "
+                "with `--verify`."
+            ) from exc
 
 
 def apply_migrations(store: DataStore) -> list[int]:
